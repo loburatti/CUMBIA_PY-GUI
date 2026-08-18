@@ -8,6 +8,7 @@ import json
 import math
 import tempfile
 import shutil
+import webbrowser
 import tkinter as tk
 from tkinter import messagebox
 import customtkinter as ctk
@@ -626,6 +627,10 @@ class CumbiaApp(ctk.CTk):
         self._theme_switch.select()
         self._theme_switch.pack(side='right', padx=14)
 
+        ctk.CTkButton(title_bar, text='About', width=60, height=26,
+                      fg_color='transparent', border_width=1,
+                      command=self._show_about).pack(side='right', padx=(0, 6))
+
         # Tabs
         self._tabs = ctk.CTkTabview(self, anchor='nw')
         self._tabs.pack(fill='both', expand=True, padx=8, pady=(4, 2))
@@ -661,6 +666,55 @@ class CumbiaApp(ctk.CTk):
         self._theme_switch.configure(text='Dark' if mode == 'dark' else 'Light')
         self._cir_canvas.request_redraw()
         self._rect_canvas.request_redraw()
+
+    # ---- About dialog -----------------------------------------------------
+    def _show_about(self):
+        win = ctk.CTkToplevel(self)
+        win.title('About CUMBIA_PY')
+        win.geometry('480x420')
+        win.resizable(False, False)
+        win.grab_set()
+        win.after(10, win.focus_force)
+
+        try:
+            from PIL import Image
+            logo_img = ctk.CTkImage(Image.open(resource_path('logo.png')),
+                                    size=(80, 80))
+            ctk.CTkLabel(win, image=logo_img, text='').pack(pady=(18, 6))
+        except Exception:
+            pass
+
+        ctk.CTkLabel(win, text='CUMBIA_PY', font=('Segoe UI', 20, 'bold')).pack()
+        ctk.CTkLabel(win, text='Version 0.3', font=('Segoe UI', 12)).pack(pady=(0, 10))
+
+        ctk.CTkLabel(win, text='Moment-Curvature, Force-Displacement\n'
+                               'and Interaction Analysis of RC Members',
+                     font=('Segoe UI', 11), justify='center').pack(pady=(0, 12))
+
+        credits = ctk.CTkFrame(win, fg_color='transparent')
+        credits.pack(pady=(0, 8))
+
+        ctk.CTkLabel(credits, text='Original analysis engine:',
+                     font=('Segoe UI', 10), text_color='gray').pack()
+        link_orig = ctk.CTkLabel(credits,
+                                 text='CUMBIA_PY by Luis Montejo (MIT License)',
+                                 font=('Segoe UI', 11, 'underline'),
+                                 text_color=('#1a6dd4', '#5ba3f5'), cursor='hand2')
+        link_orig.pack()
+        link_orig.bind('<Button-1>',
+                       lambda _: webbrowser.open('https://github.com/LuisMontejo/CUMBIA_PY'))
+
+        ctk.CTkLabel(credits, text='', height=6).pack()
+
+        ctk.CTkLabel(credits, text='GUI, enhancements, and distribution:',
+                     font=('Segoe UI', 10), text_color='gray').pack()
+        ctk.CTkLabel(credits, text='Lorenzo Buratti',
+                     font=('Segoe UI', 11, 'bold')).pack()
+
+        ctk.CTkLabel(win, text='Released under the MIT License',
+                     font=('Segoe UI', 10), text_color='gray').pack(pady=(8, 4))
+
+        ctk.CTkButton(win, text='Chiudi', width=100, command=win.destroy).pack(pady=(6, 14))
 
     # ---- Circular tab -----------------------------------------------------
     def _build_cir_tab(self):
