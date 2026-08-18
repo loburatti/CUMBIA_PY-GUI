@@ -270,6 +270,7 @@ d_layer = MLR[:, 0]
 n_bars = MLR[:, 1]
 dbl_layer = MLR[:, 2]
 dbl_max = np.max(dbl_layer)
+dbl_extreme = min(dbl_layer[0], dbl_layer[-1])
 
 As_layer = n_bars * (np.pi * dbl_layer**2) / 4
 Ast = np.sum(As_layer)
@@ -762,7 +763,7 @@ failCuDuGN_strain, buckldisplGN_strain, bucklforceGN_strain = 0, 0, 0
 CuDu = curv / eqcurv
 
 # Evaluate Goodnight Strain Limit
-es_bb = 0.03 + 700 * rho_y * (fyh / Es) - 0.1 * AxialRatio
+es_bb = 0.03 + 700 * TransvSteelRatioAverage * (fyh / Es) - 0.1 * AxialRatio
 fail_gn_strain = es_bb - (-steelstrain)
 
 fig4, ax1_p4 = plt.subplots(figsize=(6.5, 4.5))
@@ -788,7 +789,7 @@ if fail_gn_strain[-1] <= 0:
 # Evaluate Moyer-Kowalsky Limit (Only applicable if Ductility > 4)
 if SectionCurvatureDuctility > 4:
     esgr4 = -0.5 * np.interp(4, CuDu, steelstrain)
-    escc = 3 * ((s / dbl_max)**(-2.5))
+    escc = 3 * ((s / dbl_extreme)**(-2.5))
     esgr = np.zeros_like(steelstrain)
     for i in range(len(steelstrain)):
         if CuDu[i] < 1: esgr[i] = 0
@@ -827,7 +828,7 @@ failCuDuBE, buckldisplBE, bucklforceBE = 0, 0, 0
 C0, C1, C2, C3, C4 = 0.019, 1.650, 1.797, 0.012, 0.072 
 
 roeff = 2 * TransvSteelRatioAverage * fyh / fpc
-rotb = C0 * (1 + C1*roeff) * ((1 + C2*P/(Agross*fpc))**-1) * (1 + C3*LBE/H + C4*dbl_max*fy/H)
+rotb = C0 * (1 + C1*roeff) * ((1 + C2*P/(Agross*fpc))**-1) * (1 + C3*LBE/H + C4*dbl_extreme*fy/H)
 plrot = (curv - fycurv) * Lp / 1000
 
 fig5, ax1_p5 = plt.subplots(figsize=(6.5, 4.5))
@@ -861,7 +862,7 @@ fig5.tight_layout()
 # Goodnight et al. (2015) Drift-Based Buckling Model
 bucritGN_drift = 0
 failCuDuGN_drift, buckldisplGN_drift, bucklforceGN_drift = 0, 0, 0
-drift_bb_pct = 0.9 - 3.13 * AxialRatio + 142000 * rho_y * (fyh / Es) + 0.45 * (L / H)
+drift_bb_pct = 0.9 - 3.13 * AxialRatio + 142000 * TransvSteelRatioAverage * (fyh / Es) + 0.45 * (L / H)
 buckldisplGN_drift = (drift_bb_pct / 100.0) * (L / 1000)
 
 if 0 < buckldisplGN_drift <= displ[-1]:

@@ -1,5 +1,5 @@
 """
-CUMBIA_PY 0.2 - Advanced GUI Launcher
+CUMBIA_PY 0.3 - Advanced GUI Launcher
 CustomTkinter interface with interactive section editor.
 """
 import os
@@ -599,7 +599,7 @@ class MLREditor(ctk.CTkFrame):
 class CumbiaApp(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title('CUMBIA_PY 0.2')
+        self.title('CUMBIA_PY 0.3')
         self.geometry('1200x820')
         self.minsize(900, 600)
 
@@ -617,7 +617,7 @@ class CumbiaApp(ctk.CTk):
         # Title bar
         title_bar = ctk.CTkFrame(self, height=44, corner_radius=0)
         title_bar.pack(fill='x', padx=0, pady=0)
-        ctk.CTkLabel(title_bar, text='  CUMBIA_PY 0.2', font=('Segoe UI', 16, 'bold')).pack(side='left', padx=10)
+        ctk.CTkLabel(title_bar, text='  CUMBIA_PY 0.3', font=('Segoe UI', 16, 'bold')).pack(side='left', padx=10)
         ctk.CTkLabel(title_bar, text='Analysis of Reinforced Concrete Members',
                      font=('Segoe UI', 11)).pack(side='left', padx=6)
 
@@ -1057,7 +1057,7 @@ class CumbiaApp(ctk.CTk):
     def _save_input_file(self, output_dir, section_type, params, run_name):
         save_data = {
             '_section_type': section_type,
-            '_app_version': '0.2',
+            '_app_version': '0.3',
         }
         save_data.update(params)
         path = os.path.join(output_dir, f'{run_name}_input.json')
