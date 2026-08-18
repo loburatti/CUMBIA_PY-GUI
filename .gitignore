@@ -1,0 +1,19 @@
+# Build / PyInstaller
+build/
+dist/
+*.spec
+__pycache__/
+*.pyc
+*.pyo
+
+# Output files
+*_Results.xlsx
+*_Full_Report.pdf
+*_Fig*.png
+
+# Temp
+*.tmp
+*.json.tmp
+
+# Test output
+test gui/
