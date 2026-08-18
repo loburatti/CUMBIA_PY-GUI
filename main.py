@@ -1,5 +1,5 @@
 """
-CUMBIA_PY 0.1 - Advanced GUI Launcher
+CUMBIA_PY 0.2 - Advanced GUI Launcher
 CustomTkinter interface with interactive section editor.
 """
 import os
@@ -252,6 +252,7 @@ class SectionCanvas(tk.Canvas):
     C_BAR      = ('#e0e0e0', '#1a1a1a')
     C_DIM      = ('#aaaaaa', '#555555')
     C_WI       = ('#e8a838', '#d48820')
+    C_WI_CONF  = ('#ff4444', '#cc0000')
     C_LEG      = ('#70c070', '#228b22')
     C_TXT      = ('#cccccc', '#333333')
 
@@ -353,7 +354,7 @@ class SectionCanvas(tk.Canvas):
         ncx = int(p.get('ncx', 2))
         ncy = int(p.get('ncy', 2))
         mlr = p.get('_mlr', [])
-        wi  = p.get('_wi', [])
+        wi_mander = p.get('_wi_mander', [])
 
         sc, ox, oy = self._scale_rect(H, B, margin=55)
 
@@ -377,23 +378,25 @@ class SectionCanvas(tk.Canvas):
         self.create_rectangle(cx0, cy0, cx1, cy1,
                               outline=self._c(self.C_STIRRUP), dash=(6, 4), width=2)
 
-        # 4 - stirrup legs (ncx horizontal, ncy vertical)
+        # 4 - stirrup legs
+        # ncx = horizontal legs (parallel to B) → draw as horizontal crossties along H
+        # ncy = vertical legs (parallel to H) → draw as vertical crossties along B
         Hcore = H - 2 * d_core
         Bcore = B - 2 * d_core
         if ncx > 2:
             for i in range(1, ncx - 1):
                 frac = i / (ncx - 1)
-                lx = d_core + frac * Bcore
-                lx0, ly0 = xy(lx, d_core)
-                lx1, ly1 = xy(lx, H - d_core)
+                ly = d_core + frac * Hcore
+                lx0, ly0 = xy(d_core, ly)
+                lx1, ly1 = xy(B - d_core, ly)
                 self.create_line(lx0, ly0, lx1, ly1,
                                  fill=self._c(self.C_LEG), width=1, dash=(4, 3))
         if ncy > 2:
             for i in range(1, ncy - 1):
                 frac = i / (ncy - 1)
-                ly = d_core + frac * Hcore
-                lx0, ly0 = xy(d_core, ly)
-                lx1, ly1 = xy(B - d_core, ly)
+                lx = d_core + frac * Bcore
+                lx0, ly0 = xy(lx, d_core)
+                lx1, ly1 = xy(lx, H - d_core)
                 self.create_line(lx0, ly0, lx1, ly1,
                                  fill=self._c(self.C_LEG), width=1, dash=(4, 3))
 
@@ -413,9 +416,8 @@ class SectionCanvas(tk.Canvas):
                                  fill=self._c(self.C_BAR), outline='')
                 bar_positions.append((xb, depth, diam))
 
-        # 6 - wi dimension arrows
+        # 6a - wi arrows (orange): gaps between ALL bars
         if len(mlr) > 0:
-            # top face: horizontal arrows between bars
             top_n = int(mlr[0][1])
             top_diam = float(mlr[0][2])
             if top_n > 1:
@@ -432,7 +434,6 @@ class SectionCanvas(tk.Canvas):
                                          text=f'{top_gap:.0f}',
                                          fill=self._c(self.C_WI), font=('Segoe UI', 7))
 
-            # right side: vertical arrows between layers
             for j in range(len(mlr) - 1):
                 dep0, _, d0 = float(mlr[j][0]), int(mlr[j][1]), float(mlr[j][2])
                 dep1, _, d1 = float(mlr[j + 1][0]), int(mlr[j + 1][1]), float(mlr[j + 1][2])
@@ -446,10 +447,51 @@ class SectionCanvas(tk.Canvas):
                                      text=f'{side_gap:.0f}',
                                      fill=self._c(self.C_WI), font=('Segoe UI', 7))
 
+        # 6b - wi Mander arrows (red): gaps between RESTRAINED bars only
+        if len(mlr) > 0:
+            Bnet = B - 2 * clb
+            Hnet = H - 2 * clb
+            n_tb = max(ncy, 2)
+            n_sd = max(ncx, 2)
+            avg_dbl_tb = (float(mlr[0][2]) + float(mlr[-1][2])) / 2
+            avg_dbl_side = sum(float(r[2]) for r in mlr) / len(mlr)
+
+            # top face restrained bars
+            if n_tb > 1:
+                wi_conf_tb = (Bnet - n_tb * avg_dbl_tb) / (n_tb - 1)
+                edge_r = clb + avg_dbl_tb / 2
+                xs_r = list(np.linspace(edge_r, B - edge_r, n_tb))
+                top_depth = float(mlr[0][0])
+                for j in range(len(xs_r) - 1):
+                    ax0, ay0 = xy(xs_r[j] + avg_dbl_tb / 2, top_depth)
+                    ax1, ay1 = xy(xs_r[j + 1] - avg_dbl_tb / 2, top_depth)
+                    if ax1 > ax0 + 8:
+                        self.create_line(ax0, ay0 + 8, ax1, ay1 + 8,
+                                         fill=self._c(self.C_WI_CONF), arrow='both', width=1)
+                        self.create_text((ax0 + ax1) / 2, ay0 + 18,
+                                         text=f'{wi_conf_tb:.0f}',
+                                         fill=self._c(self.C_WI_CONF), font=('Segoe UI', 7, 'bold'))
+
+            # left side restrained bars
+            if n_sd > 1:
+                wi_conf_sd = (Hnet - n_sd * avg_dbl_side) / (n_sd - 1)
+                edge_v = clb + avg_dbl_side / 2
+                ys_r = list(np.linspace(edge_v, H - edge_v, n_sd))
+                for j in range(len(ys_r) - 1):
+                    ax0, ay0 = xy(-20 / sc, ys_r[j] + avg_dbl_side / 2)
+                    ax1, ay1 = xy(-20 / sc, ys_r[j + 1] - avg_dbl_side / 2)
+                    if ay1 > ay0 + 8:
+                        self.create_line(ax0, ay0, ax1, ay1,
+                                         fill=self._c(self.C_WI_CONF), arrow='both', width=1)
+                        self.create_text(ax0 - 14, (ay0 + ay1) / 2,
+                                         text=f'{wi_conf_sd:.0f}',
+                                         fill=self._c(self.C_WI_CONF), font=('Segoe UI', 7, 'bold'),
+                                         angle=90)
+
         # 7 - dimension labels
         # H (left)
-        hx0, hy0 = xy(-12 / sc, 0)
-        hx1, hy1 = xy(-12 / sc, H)
+        hx0, hy0 = xy(-40 / sc, 0)
+        hx1, hy1 = xy(-40 / sc, H)
         self.create_line(hx0, hy0, hx1, hy1, fill=self._c(self.C_DIM), arrow='both', width=1)
         self.create_text(hx0 - 14, (hy0 + hy1) / 2, text=f'H={H:.0f}',
                          fill=self._c(self.C_TXT), font=('Segoe UI', 8), angle=90)
@@ -557,7 +599,7 @@ class MLREditor(ctk.CTkFrame):
 class CumbiaApp(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title('CUMBIA_PY 0.1')
+        self.title('CUMBIA_PY 0.2')
         self.geometry('1200x820')
         self.minsize(900, 600)
 
@@ -575,7 +617,7 @@ class CumbiaApp(ctk.CTk):
         # Title bar
         title_bar = ctk.CTkFrame(self, height=44, corner_radius=0)
         title_bar.pack(fill='x', padx=0, pady=0)
-        ctk.CTkLabel(title_bar, text='  CUMBIA_PY 0.1', font=('Segoe UI', 16, 'bold')).pack(side='left', padx=10)
+        ctk.CTkLabel(title_bar, text='  CUMBIA_PY 0.2', font=('Segoe UI', 16, 'bold')).pack(side='left', padx=10)
         ctk.CTkLabel(title_bar, text='Analysis of Reinforced Concrete Members',
                      font=('Segoe UI', 11)).pack(side='left', padx=6)
 
@@ -796,6 +838,7 @@ class CumbiaApp(ctk.CTk):
 
     # ---- compute wi from MLR (auto) ----------------------------------------
     def _compute_wi(self, mlr):
+        """Wi between ALL bars (for display arrows showing bar positions)."""
         try:
             B = float(self._vars_rect.get('B', tk.StringVar(value='300')).get())
             clb = float(self._vars_rect.get('clb', tk.StringVar(value='40')).get())
@@ -807,29 +850,58 @@ class CumbiaApp(ctk.CTk):
 
         wi = []
 
-        # top face: clear gaps between bars
         top_n = int(mlr[0][1])
         top_d = mlr[0][2]
         if top_n > 1:
             gap = (B - 2 * clb - top_n * top_d) / (top_n - 1)
             wi.extend([gap] * (top_n - 1))
 
-        # right side going down: clear gap between layers
         for j in range(len(mlr) - 1):
             gap = mlr[j + 1][0] - mlr[j][0] - (mlr[j][2] + mlr[j + 1][2]) / 2
             wi.append(gap)
 
-        # bottom face: clear gaps between bars
         bot_n = int(mlr[-1][1])
         bot_d = mlr[-1][2]
         if bot_n > 1:
             gap = (B - 2 * clb - bot_n * bot_d) / (bot_n - 1)
             wi.extend([gap] * (bot_n - 1))
 
-        # left side going up: same as right side (symmetric)
         for j in range(len(mlr) - 1):
             gap = mlr[j + 1][0] - mlr[j][0] - (mlr[j][2] + mlr[j + 1][2]) / 2
             wi.append(gap)
+
+        return wi
+
+    def _compute_wi_mander(self, mlr):
+        """Wi between RESTRAINED bars only (for Mander confinement model)."""
+        try:
+            B = float(self._vars_rect.get('B', tk.StringVar(value='300')).get())
+            H = float(self._vars_rect.get('H', tk.StringVar(value='400')).get())
+            clb = float(self._vars_rect.get('clb', tk.StringVar(value='40')).get())
+            ncx = int(float(self._v_ncx.get()))
+            ncy = int(float(self._v_ncy.get()))
+        except (ValueError, AttributeError):
+            return []
+
+        if len(mlr) == 0:
+            return []
+
+        Bnet = B - 2 * clb
+        Hnet = H - 2 * clb
+        n_tb = max(ncy, 2)
+        n_sd = max(ncx, 2)
+
+        avg_dbl_tb = (mlr[0][2] + mlr[-1][2]) / 2
+        avg_dbl_side = sum(r[2] for r in mlr) / len(mlr)
+
+        wi = []
+        tb_gap = (Bnet - n_tb * avg_dbl_tb) / max(n_tb - 1, 1)
+        wi.extend([tb_gap] * (n_tb - 1))
+        wi.extend([tb_gap] * (n_tb - 1))
+
+        sd_gap = (Hnet - n_sd * avg_dbl_side) / max(n_sd - 1, 1)
+        wi.extend([sd_gap] * (n_sd - 1))
+        wi.extend([sd_gap] * (n_sd - 1))
 
         return wi
 
@@ -874,15 +946,20 @@ class CumbiaApp(ctk.CTk):
 
             # wi
             if self._wi_auto.get():
-                wi = self._compute_wi(mlr)
-                self._wi_display.configure(text=f'wi = [{", ".join(f"{v:.0f}" for v in wi)}]')
+                wi_display = self._compute_wi(mlr)
+                wi_mander = self._compute_wi_mander(mlr)
+                self._wi_display.configure(
+                    text=f'wi Mander = [{", ".join(f"{v:.0f}" for v in wi_mander)}]')
             else:
                 try:
-                    wi = [float(x.strip()) for x in self._v_wi.get().split(',') if x.strip()]
+                    wi_mander = [float(x.strip()) for x in self._v_wi.get().split(',') if x.strip()]
                 except ValueError:
-                    wi = []
-                self._wi_display.configure(text=f'wi (manuale) = [{", ".join(f"{v:.0f}" for v in wi)}]')
-            p['_wi'] = wi
+                    wi_mander = []
+                wi_display = wi_mander
+                self._wi_display.configure(
+                    text=f'wi (manuale) = [{", ".join(f"{v:.0f}" for v in wi_mander)}]')
+            p['_wi'] = wi_display
+            p['_wi_mander'] = wi_mander
 
             self._rect_canvas.update_params(p)
         except Exception:
@@ -970,7 +1047,7 @@ class CumbiaApp(ctk.CTk):
 
             if self._wi_auto.get():
                 mlr = self._compute_auto_mlr() if is_auto else self._mlr_editor.get_mlr()
-                params['wi_input'] = self._compute_wi(mlr)
+                params['wi_input'] = self._compute_wi_mander(mlr)
             else:
                 params['wi_input'] = [float(x.strip()) for x in self._v_wi.get().split(',') if x.strip()]
 
@@ -980,7 +1057,7 @@ class CumbiaApp(ctk.CTk):
     def _save_input_file(self, output_dir, section_type, params, run_name):
         save_data = {
             '_section_type': section_type,
-            '_app_version': '0.1',
+            '_app_version': '0.2',
         }
         save_data.update(params)
         path = os.path.join(output_dir, f'{run_name}_input.json')

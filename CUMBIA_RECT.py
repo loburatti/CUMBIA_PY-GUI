@@ -68,8 +68,8 @@ s = 120                     # Spacing of transverse steel [mm]
 ncx = 2                     # Number of legs in X-dir (parallel to B, resisting Y-shear)
 ncy = 2                     # Number of legs in Y-dir (parallel to H, resisting X-shear)
 
-# Clear distances between longitudinal bars (Input array e.g., [272, 272, 172, 172] 
-# or [0] for automatic) assuming all bars are restrained
+# Clear distances between restrained longitudinal bars for Mander confinement
+# (Input array or [0] for automatic calculation based on ncx/ncy)
 wi_input = [272, 272, 172, 172]
 
 # ------------------------------------------------------------------------------
@@ -284,28 +284,47 @@ AxialRatio = P / (fpc * Agross)
 rho_y = Asy / (s * bc)
 
 # ------------------------------------------------------------------------------
-# Calculate wi (Clear distances between peripheral longitudinal bars)
+# Calculate wi (Clear distances between RESTRAINED longitudinal bars)
 # ------------------------------------------------------------------------------
 wi_input_arr = np.array(wi_input)
 
 if np.sum(wi_input_arr) == 0 and len(MLR) > 1:
-    top_bars = int(MLR[0, 1])
-    bot_bars = int(MLR[-1, 1])
-    
-    # Top and bottom face gaps
-    wi_top = np.full(top_bars - 1, (B - 2*clb - top_bars*MLR[0, 2]) / (top_bars - 1)) if top_bars > 1 else np.array([])
-    wi_bot = np.full(bot_bars - 1, (B - 2*clb - bot_bars*MLR[-1, 2]) / (bot_bars - 1)) if bot_bars > 1 else np.array([])
-    
-    # Side face gaps (vertical differences between layers minus average bar diameter)
-    wi_sides = np.diff(MLR[:, 0]) - np.mean(MLR[:, 2])
-    
-    # Combine [Top, Bottom, Left Side, Right Side]
-    wi = np.concatenate((wi_top, wi_bot, wi_sides, wi_sides))
-    
+    # Mander wi: clear distances between RESTRAINED bars only.
+    # Top/bottom faces: ncy restrained bars equally spaced across B.
+    # Side faces: ncx restrained bars equally spaced across H.
+    n_restrained_tb = max(ncy, 2)
+    n_restrained_side = max(ncx, 2)
+
+    Bnet = B - 2 * clb
+    Hnet = H - 2 * clb
+    avg_dbl_tb = (MLR[0, 2] + MLR[-1, 2]) / 2
+    avg_dbl_side = np.mean(MLR[:, 2])
+
+    if n_restrained_tb > 1:
+        wi_top_gap = (Bnet - n_restrained_tb * avg_dbl_tb) / (n_restrained_tb - 1)
+        wi_top = np.full(n_restrained_tb - 1, wi_top_gap)
+    else:
+        wi_top = np.array([Bnet - avg_dbl_tb])
+    wi_bot = wi_top.copy()
+
+    if n_restrained_side > 1:
+        wi_side_gap = (Hnet - n_restrained_side * avg_dbl_side) / (n_restrained_side - 1)
+        wi_side = np.full(n_restrained_side - 1, wi_side_gap)
+    else:
+        wi_side = np.array([Hnet - avg_dbl_side])
+
+    wi = np.concatenate((wi_top, wi_bot, wi_side, wi_side))
+
 elif np.sum(wi_input_arr) == 0 and len(MLR) == 1:
-    # Fallback for a single layer of reinforcement
-    wi = np.array([H - 2*clb - 2*MLR[0, 2], H - 2*clb - 2*MLR[0, 2], B - 2*clb - 2*MLR[0, 2], B - 2*clb - 2*MLR[0, 2]])
-    
+    n_restrained_tb = max(ncy, 2)
+    n_restrained_side = max(ncx, 2)
+    Bnet = B - 2 * clb
+    Hnet = H - 2 * clb
+    dbl = MLR[0, 2]
+    wi_tb = np.full(n_restrained_tb - 1, (Bnet - n_restrained_tb * dbl) / max(n_restrained_tb - 1, 1))
+    wi_sd = np.full(n_restrained_side - 1, (Hnet - n_restrained_side * dbl) / max(n_restrained_side - 1, 1))
+    wi = np.concatenate((wi_tb, wi_tb, wi_sd, wi_sd))
+
 else:
     wi = wi_input_arr
 
