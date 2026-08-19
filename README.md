@@ -75,7 +75,7 @@ The automatic `wi` calculation now correctly computes clear distances between **
 Install dependencies:
 
 ```bash
-pip install numpy pandas matplotlib openpyxl customtkinter
+pip install -r requirements.txt
 ```
 
 ## Usage
