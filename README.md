@@ -21,6 +21,16 @@ Version 0.3 introduces a complete GUI built with [CustomTkinter](https://github.
   <img src="logo.png" alt="CUMBIA_PY" width="120">
 </p>
 
+### Circular Section
+<p align="center">
+  <img src="screenshots/gui_circular.png" alt="Circular section tab" width="900">
+</p>
+
+### Rectangular Section
+<p align="center">
+  <img src="screenshots/gui_rectangular.png" alt="Rectangular section tab" width="900">
+</p>
+
 **Features:**
 - Tabbed interface for circular and rectangular sections
 - Interactive cross-section preview with live update
