@@ -15,5 +15,8 @@ __pycache__/
 *.tmp
 *.json.tmp
 
+# User preferences
+cumbia_settings.json
+
 # Test output
 test gui/

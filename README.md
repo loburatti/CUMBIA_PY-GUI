@@ -40,6 +40,7 @@ Version 0.3 introduces a complete GUI built with [CustomTkinter](https://github.
 - Save/Load input parameters as JSON
 - Automated output to user-chosen folder with PDF report auto-open
 - Dark/Light theme toggle
+- English/Italian language toggle (click **IT**/**EN** in the title bar; restart required)
 - Tooltip help on every parameter
 
 ## Modifications from Original Code

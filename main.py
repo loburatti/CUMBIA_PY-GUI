@@ -13,6 +13,7 @@ import tkinter as tk
 from tkinter import messagebox
 import customtkinter as ctk
 import numpy as np
+from i18n import T, get_tips, get_lang, set_lang, save_preference
 
 # PyInstaller: analysis scripts import these at runtime via exec(),
 # so we import them here to ensure they are bundled.
@@ -32,100 +33,45 @@ def resource_path(relative_path):
 
 
 # ==========================================================================
-# Tooltip descriptions for every parameter
+# Tooltip descriptions — loaded from i18n module
 # ==========================================================================
-TIPS = {
-    'name':          'Prefisso per i file di output (Excel, PDF, PNG)',
-    'interaction':   'Esegui analisi di interazione carico assiale - momento (diagramma M-P)',
-    'hinge_method':  'pck = Priestley et al. (2007)\nmodified_lpr = Goodnight et al. (2016)',
-    'D':             'Diametro esterno della sezione circolare',
-    'H':             'Altezza della sezione (perpendicolare all\'asse di flessione)',
-    'B':             'Larghezza della sezione',
-    'clb':           'Copriferro netto: distanza dal bordo esterno\nalla superficie delle barre longitudinali',
-    'L':             'Lunghezza libera del membro strutturale',
-    'bending':       'single = mensola (cantilever)\ndouble = doppio incastro (fixed-fixed)',
-    'ductilitymode': 'Modalita di carico per il fattore di degrado\na taglio UCSD (uniaxial o biaxial)',
-    'p_delta':       'Includi effetti P-Delta approssimati\n(sottrazione momento ribaltamento geometrico)',
-    'confined':      'Modello costitutivo calcestruzzo confinato:\nmc = Mander confinato, mclw = Mander lightweight',
-    'unconfined':    'Modello costitutivo calcestruzzo non confinato:\nmu = Mander non confinato, mulw = lightweight',
-    'rebar':         'Modello costitutivo acciaio:\nra = Raynor, ks = King',
-    'nbl':           'Numero totale di barre longitudinali\ndistribuite uniformemente sulla sezione circolare',
-    'Dbl':           'Diametro delle barre longitudinali (circolare)',
-    'Dh':            'Diametro dell\'armatura trasversale (spirali/cerchi)',
-    'type_reinf':    'Tipo di armatura trasversale:\nspirals = spirale continua\nhoops = cerchi chiusi',
-    's':             'Passo (interasse) dell\'armatura trasversale',
-    'P_kN':          'Carico assiale applicato\n+ = compressione, - = trazione',
-    'fpc':           'Resistenza a compressione cilindrica del calcestruzzo (f\'c)',
-    'Ec':            'Modulo elastico del calcestruzzo\n0 = calcolo automatico: 5000 * sqrt(f\'c)',
-    'eco':           'Deformazione al picco del calcestruzzo non confinato\n(0.002 normale, 0.004 lightweight)',
-    'esm':           'Deformazione massima dell\'acciaio trasversale\n(tipicamente 0.10 - 0.15)',
-    'espall':        'Deformazione massima del calcestruzzo non confinato\n(deformazione di spalling)',
-    'fy':            'Tensione di snervamento dell\'acciaio longitudinale',
-    'fyh':           'Tensione di snervamento dell\'acciaio trasversale',
-    'Es':            'Modulo elastico dell\'acciaio',
-    'fsu':           'Tensione ultima dell\'acciaio longitudinale',
-    'esh':           'Deformazione all\'inizio dell\'incrudimento',
-    'esu':           'Deformazione ultima dell\'acciaio',
-    'Ey':            'Pendenza del plateau di snervamento (modello Raynor)',
-    'C1':            'Parametro curvatura incrudimento (modello Raynor)',
-    'csid':          'Limite deformazione calcestruzzo per\nil diagramma di interazione (yield surface)',
-    'ssid':          'Limite deformazione acciaio per\nil diagramma di interazione (yield surface)',
-    'ecser':         'Limite deformazione calcestruzzo a compressione\nper lo stato limite di servizio',
-    'esser':         'Limite deformazione acciaio a trazione\nper lo stato limite di servizio',
-    'ecdam':         'Limite deformazione calcestruzzo per damage control\ntwth = 2/3 della deformazione ultima, oppure valore numerico',
-    'esdam':         'Limite deformazione acciaio a trazione\nper damage control',
-    'temp':          'Temperatura del campione [°C]\n(influenza la resistenza a trazione se < 0)',
-    'kLsp':          'Costante di strain penetration\n(0.022 a temperatura ambiente, 0.011 a -40°C)',
-    'itermax':       'Numero massimo di iterazioni per la ricerca\ndell\'asse neutro',
-    'ncl':           'Numero di strati di discretizzazione del calcestruzzo',
-    'tolerance':     'Moltiplicatore di tolleranza per l\'equilibrio delle forze\n(tol = tolerance * Area * f\'c)',
-    'dels':          'Incremento di deformazione (delta strain)\nper l\'analisi sezionale',
-    'auto_generate_MLR': 'Attivo: layout periferico uniforme auto-generato\nDisattivo: matrice MLR personalizzata',
-    'n_top_bot':     'Numero di barre sulla faccia superiore\n(e uguale sulla inferiore)',
-    'n_side':        'Numero di barre su ciascun lato\n(esclusi gli angoli)',
-    'Dbl_auto':      'Diametro di tutte le barre longitudinali\n(layout automatico)',
-    'dv':            'Diametro dell\'armatura trasversale (staffe)',
-    'ncx':           'Numero di bracci in direzione X\n(paralleli a B, confinamento)',
-    'ncy':           'Numero di bracci in direzione Y\n(paralleli a H, resistenza a taglio)',
-    'wi_input':      'Distanze libere tra barre longitudinali periferiche.\n[0] = calcolo automatico',
-}
 
 # ==========================================================================
 # Parameter schemas:  (key, label, default, widget, options, unit)
 # ==========================================================================
 
 CIR_PARAMS = [
-    ('section', 'Controlli Generali'),
-    ('name',          'Nome progetto',                'CUMBIACIR_example', 'entry', None, ''),
-    ('interaction',   'Interazione M-P',              'y',    'combo', ['y', 'n'], ''),
-    ('hinge_method',  'Metodo cerniera',              'pck',  'combo', ['pck', 'modified_lpr'], ''),
-    ('section', 'Geometria Sezione'),
-    ('D',   'Diametro D',       1000.0, 'entry', None, 'mm'),
-    ('clb', 'Copriferro clb',   50.0,   'entry', None, 'mm'),
-    ('section', 'Proprieta Membro'),
-    ('L',             'Lunghezza L',        3000.0,    'entry', None, 'mm'),
-    ('bending',       'Flessione',          'single',  'combo', ['single', 'double'], ''),
-    ('ductilitymode', 'Duttilita',          'biaxial', 'combo', ['uniaxial', 'biaxial'], ''),
-    ('p_delta',       'P-Delta',            'y',       'combo', ['y', 'n'], ''),
-    ('section', 'Modelli Materiali'),
-    ('confined',   'Cls confinato',      'mc', 'combo', ['mc', 'mu', 'mclw'], ''),
-    ('unconfined', 'Cls non confinato',  'mu', 'combo', ['mc', 'mu', 'mclw', 'mulw'], ''),
-    ('rebar',      'Acciaio',            'ra', 'combo', ['ra', 'ks'], ''),
-    ('section', 'Armatura'),
-    ('nbl',        'N. barre long.',            22,    'entry', None, ''),
-    ('Dbl',        'Diametro barre long.',      25.0,  'entry', None, 'mm'),
-    ('Dh',         'Diametro spirali/cerchi',   9.0,   'entry', None, 'mm'),
-    ('type_reinf', 'Tipo arm. trasversale',     'spirals', 'combo', ['spirals', 'hoops'], ''),
-    ('s',          'Passo arm. trasversale',    120.0,  'entry', None, 'mm'),
-    ('section', 'Carichi'),
-    ('P_kN', 'Carico assiale P', 2000.0, 'entry', None, 'kN'),
-    ('section', 'Calcestruzzo'),
+    ('section', 'sect_general'),
+    ('name',          'lbl_name',            'CUMBIACIR_example', 'entry', None, ''),
+    ('interaction',   'lbl_interaction',     'y',    'combo', ['y', 'n'], ''),
+    ('hinge_method',  'lbl_hinge_method',   'pck',  'combo', ['pck', 'modified_lpr'], ''),
+    ('section', 'sect_geometry'),
+    ('D',   'lbl_D',       1000.0, 'entry', None, 'mm'),
+    ('clb', 'lbl_clb',     50.0,   'entry', None, 'mm'),
+    ('section', 'sect_member'),
+    ('L',             'lbl_L',              3000.0,    'entry', None, 'mm'),
+    ('bending',       'lbl_bending',        'single',  'combo', ['single', 'double'], ''),
+    ('ductilitymode', 'lbl_ductilitymode',  'biaxial', 'combo', ['uniaxial', 'biaxial'], ''),
+    ('p_delta',       'lbl_p_delta',        'y',       'combo', ['y', 'n'], ''),
+    ('section', 'sect_materials'),
+    ('confined',   'lbl_confined',    'mc', 'combo', ['mc', 'mu', 'mclw'], ''),
+    ('unconfined', 'lbl_unconfined',  'mu', 'combo', ['mc', 'mu', 'mclw', 'mulw'], ''),
+    ('rebar',      'lbl_rebar',       'ra', 'combo', ['ra', 'ks'], ''),
+    ('section', 'sect_reinforcement'),
+    ('nbl',        'lbl_nbl',              22,    'entry', None, ''),
+    ('Dbl',        'lbl_Dbl',              25.0,  'entry', None, 'mm'),
+    ('Dh',         'lbl_Dh',               9.0,   'entry', None, 'mm'),
+    ('type_reinf', 'lbl_type_reinf',       'spirals', 'combo', ['spirals', 'hoops'], ''),
+    ('s',          'lbl_s',                120.0,  'entry', None, 'mm'),
+    ('section', 'sect_loads'),
+    ('P_kN', 'lbl_P_kN', 2000.0, 'entry', None, 'kN'),
+    ('section', 'sect_concrete'),
     ('fpc',    "f'c",                     35.0,    'entry', None, 'MPa'),
     ('Ec',     "Ec (0=auto)",             0,       'entry', None, 'MPa'),
     ('eco',    'eco',                     0.002,   'entry', None, ''),
     ('esm',    'esm',                     0.11,    'entry', None, ''),
     ('espall', 'espall',                  0.0064,  'entry', None, ''),
-    ('section', 'Acciaio'),
+    ('section', 'sect_steel'),
     ('fy',  'fy',         460.0,    'entry', None, 'MPa'),
     ('fyh', 'fyh',        400.0,    'entry', None, 'MPa'),
     ('Es',  'Es',         200000.0, 'entry', None, 'MPa'),
@@ -134,17 +80,17 @@ CIR_PARAMS = [
     ('esu', 'esu',        0.12,     'entry', None, ''),
     ('Ey',  'Ey (Raynor)',350.0,    'entry', None, 'MPa'),
     ('C1',  'C1 (Raynor)',3.5,      'entry', None, ''),
-    ('section', 'Limiti di Deformazione'),
+    ('section', 'sect_strain_limits'),
     ('csid',  'csid',   0.004,  'entry', None, ''),
     ('ssid',  'ssid',   0.015,  'entry', None, ''),
     ('ecser', 'ecser',  0.004,  'entry', None, ''),
     ('esser', 'esser',  0.015,  'entry', None, ''),
     ('ecdam', 'ecdam',  'twth', 'entry', None, ''),
     ('esdam', 'esdam',  0.060,  'entry', None, ''),
-    ('section', 'Parametri Ambientali'),
-    ('temp', 'Temperatura',  40.0,   'entry', None, 'C'),
+    ('section', 'sect_environmental'),
+    ('temp', 'lbl_temp',     40.0,   'entry', None, 'C'),
     ('kLsp', 'kLsp',         0.022,  'entry', None, ''),
-    ('section', 'Parametri Numerici'),
+    ('section', 'sect_numerical'),
     ('itermax',   'itermax',    1000,    'entry', None, ''),
     ('ncl',       'ncl',        40,      'entry', None, ''),
     ('tolerance', 'tolerance',  0.001,   'entry', None, ''),
@@ -152,32 +98,32 @@ CIR_PARAMS = [
 ]
 
 RECT_PARAMS = [
-    ('section', 'Controlli Generali'),
-    ('name',          'Nome progetto',                'CUMBIARECT_example', 'entry', None, ''),
-    ('interaction',   'Interazione M-P',              'y',    'combo', ['y', 'n'], ''),
-    ('hinge_method',  'Metodo cerniera',              'pck',  'combo', ['pck', 'modified_lpr'], ''),
-    ('section', 'Geometria Sezione'),
-    ('H',   'Altezza H',        400.0, 'entry', None, 'mm'),
-    ('B',   'Larghezza B',      300.0, 'entry', None, 'mm'),
-    ('clb', 'Copriferro clb',   40.0,  'entry', None, 'mm'),
-    ('section', 'Proprieta Membro'),
-    ('L',             'Lunghezza L',        1200.0,    'entry', None, 'mm'),
-    ('bending',       'Flessione',          'single',  'combo', ['single', 'double'], ''),
-    ('ductilitymode', 'Duttilita',          'biaxial', 'combo', ['uniaxial', 'biaxial'], ''),
-    ('p_delta',       'P-Delta',            'n',       'combo', ['y', 'n'], ''),
-    ('section', 'Modelli Materiali'),
-    ('confined',   'Cls confinato',      'mc', 'combo', ['mc', 'mclw'], ''),
-    ('unconfined', 'Cls non confinato',  'mu', 'combo', ['mu', 'mulw', 'mclw'], ''),
-    ('rebar',      'Acciaio',            'ra', 'combo', ['ra', 'ks'], ''),
-    ('section', 'Carichi'),
-    ('P_kN', 'Carico assiale P', 250.0, 'entry', None, 'kN'),
-    ('section', 'Calcestruzzo'),
+    ('section', 'sect_general'),
+    ('name',          'lbl_name',            'CUMBIARECT_example', 'entry', None, ''),
+    ('interaction',   'lbl_interaction',     'y',    'combo', ['y', 'n'], ''),
+    ('hinge_method',  'lbl_hinge_method',   'pck',  'combo', ['pck', 'modified_lpr'], ''),
+    ('section', 'sect_geometry'),
+    ('H',   'lbl_H',       400.0, 'entry', None, 'mm'),
+    ('B',   'lbl_B',       300.0, 'entry', None, 'mm'),
+    ('clb', 'lbl_clb',     40.0,  'entry', None, 'mm'),
+    ('section', 'sect_member'),
+    ('L',             'lbl_L',              1200.0,    'entry', None, 'mm'),
+    ('bending',       'lbl_bending',        'single',  'combo', ['single', 'double'], ''),
+    ('ductilitymode', 'lbl_ductilitymode',  'biaxial', 'combo', ['uniaxial', 'biaxial'], ''),
+    ('p_delta',       'lbl_p_delta',        'n',       'combo', ['y', 'n'], ''),
+    ('section', 'sect_materials'),
+    ('confined',   'lbl_confined',    'mc', 'combo', ['mc', 'mclw'], ''),
+    ('unconfined', 'lbl_unconfined',  'mu', 'combo', ['mu', 'mulw', 'mclw'], ''),
+    ('rebar',      'lbl_rebar',       'ra', 'combo', ['ra', 'ks'], ''),
+    ('section', 'sect_loads'),
+    ('P_kN', 'lbl_P_kN', 250.0, 'entry', None, 'kN'),
+    ('section', 'sect_concrete'),
     ('fpc',    "f'c",        28.0,    'entry', None, 'MPa'),
     ('Ec',     "Ec (0=auto)",0,       'entry', None, 'MPa'),
     ('eco',    'eco',        0.002,   'entry', None, ''),
     ('esm',    'esm',        0.12,    'entry', None, ''),
     ('espall', 'espall',     0.0064,  'entry', None, ''),
-    ('section', 'Acciaio'),
+    ('section', 'sect_steel'),
     ('fy',  'fy',         450.0,    'entry', None, 'MPa'),
     ('fyh', 'fyh',        400.0,    'entry', None, 'MPa'),
     ('Es',  'Es',         200000.0, 'entry', None, 'MPa'),
@@ -186,17 +132,17 @@ RECT_PARAMS = [
     ('esu', 'esu',         0.15,    'entry', None, ''),
     ('Ey',  'Ey (Raynor)', 350.0,   'entry', None, 'MPa'),
     ('C1',  'C1 (Raynor)', 3.5,     'entry', None, ''),
-    ('section', 'Limiti di Deformazione'),
+    ('section', 'sect_strain_limits'),
     ('csid',  'csid',   0.004,  'entry', None, ''),
     ('ssid',  'ssid',   0.015,  'entry', None, ''),
     ('ecser', 'ecser',  0.004,  'entry', None, ''),
     ('esser', 'esser',  0.015,  'entry', None, ''),
     ('ecdam', 'ecdam',  'twth', 'entry', None, ''),
     ('esdam', 'esdam',  0.060,  'entry', None, ''),
-    ('section', 'Parametri Ambientali'),
-    ('temp', 'Temperatura',  30.0,   'entry', None, 'C'),
+    ('section', 'sect_environmental'),
+    ('temp', 'lbl_temp',     30.0,   'entry', None, 'C'),
     ('kLsp', 'kLsp',         0.022,  'entry', None, ''),
-    ('section', 'Parametri Numerici'),
+    ('section', 'sect_numerical'),
     ('itermax',   'itermax',    1000,    'entry', None, ''),
     ('ncl',       'ncl',        40,      'entry', None, ''),
     ('tolerance', 'tolerance',  0.001,   'entry', None, ''),
@@ -529,17 +475,17 @@ class MLREditor(ctk.CTkFrame):
         # Header
         hdr = ctk.CTkFrame(self, fg_color='transparent')
         hdr.pack(fill='x', padx=2, pady=(4, 0))
-        for i, (txt, w) in enumerate([('Prof. [mm]', 80), ('N. barre', 70), ('Diam [mm]', 80)]):
-            ctk.CTkLabel(hdr, text=txt, width=w, font=('Segoe UI', 11, 'bold')).grid(row=0, column=i, padx=2)
+        for i, (key, w) in enumerate([('mlr_depth', 80), ('mlr_nbars', 70), ('mlr_diam', 80)]):
+            ctk.CTkLabel(hdr, text=T(key), width=w, font=('Segoe UI', 11, 'bold')).grid(row=0, column=i, padx=2)
 
         self._table_frame = ctk.CTkFrame(self, fg_color='transparent')
         self._table_frame.pack(fill='x', padx=2)
 
         btn_frame = ctk.CTkFrame(self, fg_color='transparent')
         btn_frame.pack(fill='x', padx=2, pady=4)
-        ctk.CTkButton(btn_frame, text='+ Aggiungi strato', width=130, height=28,
+        ctk.CTkButton(btn_frame, text=T('add_layer'), width=130, height=28,
                       command=self._add_row).pack(side='left', padx=2)
-        ctk.CTkButton(btn_frame, text='- Rimuovi ultimo', width=130, height=28,
+        ctk.CTkButton(btn_frame, text=T('remove_last'), width=130, height=28,
                       fg_color='#8b0000', hover_color='#a52a2a',
                       command=self._remove_row).pack(side='left', padx=2)
 
@@ -631,11 +577,20 @@ class CumbiaApp(ctk.CTk):
                       fg_color='transparent', border_width=1,
                       command=self._show_about).pack(side='right', padx=(0, 6))
 
+        # Language toggle
+        self._lang_btn = ctk.CTkButton(
+            title_bar, text='IT' if get_lang() == 'en' else 'EN',
+            width=36, height=26, fg_color='transparent', border_width=1,
+            command=self._toggle_lang)
+        self._lang_btn.pack(side='right', padx=(0, 4))
+
         # Tabs
+        self._tab_cir_name = T('tab_circular')
+        self._tab_rect_name = T('tab_rectangular')
         self._tabs = ctk.CTkTabview(self, anchor='nw')
         self._tabs.pack(fill='both', expand=True, padx=8, pady=(4, 2))
-        self._tabs.add('Sezione Circolare')
-        self._tabs.add('Sezione Rettangolare')
+        self._tabs.add(self._tab_cir_name)
+        self._tabs.add(self._tab_rect_name)
 
         self._build_cir_tab()
         self._build_rect_tab()
@@ -643,19 +598,19 @@ class CumbiaApp(ctk.CTk):
         # Bottom bar
         bot = ctk.CTkFrame(self, height=42)
         bot.pack(fill='x', padx=8, pady=(2, 6))
-        ctk.CTkLabel(bot, text='Output:').pack(side='left', padx=(6, 2))
+        ctk.CTkLabel(bot, text=T('output')).pack(side='left', padx=(6, 2))
         self._output_dir = ctk.CTkEntry(bot, width=340,
-                                        placeholder_text='Cartella principale di output')
+                                        placeholder_text=T('output_placeholder'))
         self._output_dir.insert(0, os.path.join(os.path.expanduser('~'), 'Desktop'))
         self._output_dir.pack(side='left', padx=4)
-        ctk.CTkButton(bot, text='Sfoglia', width=70, command=self._browse).pack(side='left', padx=2)
-        ctk.CTkButton(bot, text='Carica', width=70,
+        ctk.CTkButton(bot, text=T('browse'), width=70, command=self._browse).pack(side='left', padx=2)
+        ctk.CTkButton(bot, text=T('load'), width=70,
                       command=self._load_params).pack(side='left', padx=2)
-        self._run_btn = ctk.CTkButton(bot, text='  ESEGUI ANALISI  ', width=180, height=34,
+        self._run_btn = ctk.CTkButton(bot, text=T('run_analysis'), width=180, height=34,
                                       font=('Segoe UI', 13, 'bold'), command=self._run)
         self._run_btn.pack(side='right', padx=10)
 
-        self._status = ctk.CTkLabel(self, text='Pronto.', anchor='w', height=22,
+        self._status = ctk.CTkLabel(self, text=T('ready'), anchor='w', height=22,
                                     font=('Segoe UI', 10))
         self._status.pack(fill='x', padx=10, pady=(0, 4))
 
@@ -667,10 +622,17 @@ class CumbiaApp(ctk.CTk):
         self._cir_canvas.request_redraw()
         self._rect_canvas.request_redraw()
 
+    # ---- language toggle -----------------------------------------------------
+    def _toggle_lang(self):
+        new_lang = 'it' if get_lang() == 'en' else 'en'
+        save_preference(new_lang)
+        set_lang(new_lang)
+        messagebox.showinfo(T('language_changed'), T('msg_restart'))
+
     # ---- About dialog -----------------------------------------------------
     def _show_about(self):
         win = ctk.CTkToplevel(self)
-        win.title('About CUMBIA_PY')
+        win.title(T('about_title'))
         win.geometry('480x420')
         win.resizable(False, False)
         win.grab_set()
@@ -714,25 +676,25 @@ class CumbiaApp(ctk.CTk):
         ctk.CTkLabel(win, text='Released under the MIT License',
                      font=('Segoe UI', 10), text_color='gray').pack(pady=(8, 4))
 
-        ctk.CTkButton(win, text='Chiudi', width=100, command=win.destroy).pack(pady=(6, 14))
+        ctk.CTkButton(win, text=T('close'), width=100, command=win.destroy).pack(pady=(6, 14))
 
     # ---- Circular tab -----------------------------------------------------
     def _build_cir_tab(self):
-        tab = self._tabs.tab('Sezione Circolare')
+        tab = self._tabs.tab(self._tab_cir_name)
         pane = ctk.CTkFrame(tab)
         pane.pack(fill='both', expand=True)
         pane.columnconfigure(1, weight=1)
         pane.rowconfigure(0, weight=1)
 
         # left: param form
-        left = ctk.CTkScrollableFrame(pane, width=380, label_text='Parametri')
+        left = ctk.CTkScrollableFrame(pane, width=380, label_text=T('parameters'))
         left.grid(row=0, column=0, sticky='nsew', padx=(0, 4))
         self._build_param_form(left, CIR_PARAMS, self._vars_cir)
 
         # right: canvas preview
         right = ctk.CTkFrame(pane)
         right.grid(row=0, column=1, sticky='nsew')
-        ctk.CTkLabel(right, text='Anteprima Sezione', font=('Segoe UI', 12, 'bold')).pack(pady=(6, 2))
+        ctk.CTkLabel(right, text=T('section_preview'), font=('Segoe UI', 12, 'bold')).pack(pady=(6, 2))
         self._cir_canvas = SectionCanvas(right, width=400, height=400)
         self._cir_canvas.pack(fill='both', expand=True, padx=10, pady=6)
 
@@ -740,14 +702,14 @@ class CumbiaApp(ctk.CTk):
 
     # ---- Rectangular tab --------------------------------------------------
     def _build_rect_tab(self):
-        tab = self._tabs.tab('Sezione Rettangolare')
+        tab = self._tabs.tab(self._tab_rect_name)
         pane = ctk.CTkFrame(tab)
         pane.pack(fill='both', expand=True)
         pane.columnconfigure(1, weight=1)
         pane.rowconfigure(0, weight=1)
 
         # left: param form
-        left = ctk.CTkScrollableFrame(pane, width=380, label_text='Parametri')
+        left = ctk.CTkScrollableFrame(pane, width=380, label_text=T('parameters'))
         left.grid(row=0, column=0, sticky='nsew', padx=(0, 4))
         self._build_param_form(left, RECT_PARAMS, self._vars_rect)
 
@@ -761,7 +723,7 @@ class CumbiaApp(ctk.CTk):
         # canvas
         canvas_frame = ctk.CTkFrame(right)
         canvas_frame.grid(row=0, column=0, sticky='nsew', padx=4, pady=(4, 2))
-        ctk.CTkLabel(canvas_frame, text='Editor Sezione', font=('Segoe UI', 12, 'bold')).pack(pady=(4, 0))
+        ctk.CTkLabel(canvas_frame, text=T('section_editor'), font=('Segoe UI', 12, 'bold')).pack(pady=(4, 0))
         self._rect_canvas = SectionCanvas(canvas_frame, width=420, height=340)
         self._rect_canvas.pack(fill='both', expand=True, padx=6, pady=4)
 
@@ -774,10 +736,10 @@ class CumbiaApp(ctk.CTk):
         # MLR table
         mlr_frame = ctk.CTkFrame(editor)
         mlr_frame.grid(row=0, column=0, sticky='nsew', padx=4, pady=4)
-        ctk.CTkLabel(mlr_frame, text='Armatura Longitudinale (MLR)',
+        ctk.CTkLabel(mlr_frame, text=T('longitudinal_mlr'),
                      font=('Segoe UI', 11, 'bold')).pack(anchor='w', padx=6, pady=(4, 0))
 
-        self._auto_var = ctk.CTkSwitch(mlr_frame, text='Layout automatico',
+        self._auto_var = ctk.CTkSwitch(mlr_frame, text=T('auto_layout'),
                                        command=self._toggle_auto_mlr)
         self._auto_var.select()
         self._auto_var.pack(anchor='w', padx=6, pady=2)
@@ -790,14 +752,14 @@ class CumbiaApp(ctk.CTk):
         self._v_n_side = tk.StringVar(value='2')
         self._v_Dbl_auto = tk.StringVar(value='25.4')
 
-        for lbl, var, tip_key in [('N. barre sup/inf:', self._v_n_top_bot, 'n_top_bot'),
-                                   ('N. barre per lato:', self._v_n_side, 'n_side'),
-                                   ('Diametro barre:', self._v_Dbl_auto, 'Dbl_auto')]:
+        for lbl_key, var, tip_key in [('n_bars_top_bot', self._v_n_top_bot, 'n_top_bot'),
+                                      ('n_bars_per_side', self._v_n_side, 'n_side'),
+                                      ('bar_diameter', self._v_Dbl_auto, 'Dbl_auto')]:
             row = ctk.CTkFrame(self._auto_frame, fg_color='transparent')
             row.pack(fill='x', pady=1)
-            l = ctk.CTkLabel(row, text=lbl, width=130)
+            l = ctk.CTkLabel(row, text=T(lbl_key), width=130)
             l.pack(side='left')
-            Tip(l, TIPS.get(tip_key, ''))
+            Tip(l, get_tips().get(tip_key, ''))
             e = ctk.CTkEntry(row, textvariable=var, width=70, height=26)
             e.pack(side='left', padx=4)
             var.trace_add('write', lambda *_: self._refresh_rect_canvas())
@@ -810,7 +772,7 @@ class CumbiaApp(ctk.CTk):
         # stirrup / wi controls
         sw_frame = ctk.CTkFrame(editor)
         sw_frame.grid(row=0, column=1, sticky='nsew', padx=4, pady=4)
-        ctk.CTkLabel(sw_frame, text='Armatura Trasversale',
+        ctk.CTkLabel(sw_frame, text=T('transverse_reinf'),
                      font=('Segoe UI', 11, 'bold')).pack(anchor='w', padx=6, pady=(4, 0))
 
         self._v_dv  = tk.StringVar(value='9.5')
@@ -818,30 +780,30 @@ class CumbiaApp(ctk.CTk):
         self._v_ncx = tk.StringVar(value='2')
         self._v_ncy = tk.StringVar(value='2')
 
-        for lbl, var, tip_key in [('Diam. staffe dv:', self._v_dv, 'dv'),
-                                   ('Passo s:', self._v_s, 's'),
-                                   ('Bracci ncx:', self._v_ncx, 'ncx'),
-                                   ('Bracci ncy:', self._v_ncy, 'ncy')]:
+        for lbl_key, var, tip_key in [('stirrup_diam', self._v_dv, 'dv'),
+                                      ('spacing_s', self._v_s, 's'),
+                                      ('legs_ncx', self._v_ncx, 'ncx'),
+                                      ('legs_ncy', self._v_ncy, 'ncy')]:
             row = ctk.CTkFrame(sw_frame, fg_color='transparent')
             row.pack(fill='x', padx=6, pady=1)
-            l = ctk.CTkLabel(row, text=lbl, width=110)
+            l = ctk.CTkLabel(row, text=T(lbl_key), width=110)
             l.pack(side='left')
-            Tip(l, TIPS.get(tip_key, ''))
+            Tip(l, get_tips().get(tip_key, ''))
             e = ctk.CTkEntry(row, textvariable=var, width=70, height=26)
             e.pack(side='left', padx=4)
             var.trace_add('write', lambda *_: self._refresh_rect_canvas())
 
-        ctk.CTkLabel(sw_frame, text='Distanze libere wi',
+        ctk.CTkLabel(sw_frame, text=T('clear_dist_wi'),
                      font=('Segoe UI', 11, 'bold')).pack(anchor='w', padx=6, pady=(10, 0))
         self._wi_auto = ctk.CTkSwitch(sw_frame, text='Auto', command=self._toggle_wi_auto)
         self._wi_auto.select()
         self._wi_auto.pack(anchor='w', padx=6, pady=2)
         self._v_wi = tk.StringVar(value='')
         self._wi_entry = ctk.CTkEntry(sw_frame, textvariable=self._v_wi, width=200, height=26,
-                                      placeholder_text='valori separati da virgola',
+                                      placeholder_text=T('comma_separated'),
                                       state='disabled')
         self._wi_entry.pack(anchor='w', padx=6, pady=2)
-        Tip(self._wi_entry, TIPS.get('wi_input', ''))
+        Tip(self._wi_entry, get_tips().get('wi_input', ''))
         self._v_wi.trace_add('write', lambda *_: self._refresh_rect_canvas())
 
         self._wi_display = ctk.CTkLabel(sw_frame, text='wi = []', anchor='w',
@@ -1021,21 +983,22 @@ class CumbiaApp(ctk.CTk):
 
     # ---- build generic parameter form -------------------------------------
     def _build_param_form(self, parent, schema, var_dict):
+        tips = get_tips()
         for item in schema:
             if item[0] == 'section':
-                ctk.CTkLabel(parent, text=item[1], font=('Segoe UI', 12, 'bold'),
+                ctk.CTkLabel(parent, text=T(item[1]), font=('Segoe UI', 12, 'bold'),
                              anchor='w').pack(fill='x', padx=4, pady=(10, 2))
                 continue
 
-            key, label, default, wtype, options, unit = item
+            key, label_key, default, wtype, options, unit = item
 
             row = ctk.CTkFrame(parent, fg_color='transparent')
             row.pack(fill='x', padx=4, pady=1)
 
-            lbl = ctk.CTkLabel(row, text=label, width=160, anchor='w')
+            lbl = ctk.CTkLabel(row, text=T(label_key), width=160, anchor='w')
             lbl.pack(side='left')
-            if key in TIPS:
-                Tip(lbl, TIPS[key])
+            if key in tips:
+                Tip(lbl, tips[key])
 
             if wtype == 'combo':
                 var = tk.StringVar(value=str(default))
@@ -1122,7 +1085,7 @@ class CumbiaApp(ctk.CTk):
     # ---- load parameters from saved JSON file --------------------------------
     def _load_params(self):
         path = ctk.filedialog.askopenfilename(
-            title='Carica parametri',
+            title=T('load_params_title'),
             filetypes=[('CUMBIA Input', '*_input.json'), ('JSON', '*.json')],
             initialdir=self._output_dir.get(),
         )
@@ -1132,21 +1095,21 @@ class CumbiaApp(ctk.CTk):
             with open(path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
         except Exception as e:
-            messagebox.showerror('Errore', f'Impossibile leggere il file:\n{e}')
+            messagebox.showerror(T('error'), f'{T("msg_read_error")}{e}')
             return
 
         section_type = data.pop('_section_type', 'circular')
         data.pop('_app_version', None)
 
         if section_type == 'circular':
-            self._tabs.set('Sezione Circolare')
+            self._tabs.set(self._tab_cir_name)
             self._apply_params(data, self._vars_cir)
         else:
-            self._tabs.set('Sezione Rettangolare')
+            self._tabs.set(self._tab_rect_name)
             self._apply_params(data, self._vars_rect)
             self._apply_rect_editor_params(data)
 
-        self._status.configure(text=f'Parametri caricati da: {os.path.basename(os.path.dirname(path))}')
+        self._status.configure(text=f'{T("params_loaded")}{os.path.basename(os.path.dirname(path))}')
 
     def _apply_params(self, data, var_dict):
         for key, var in var_dict.items():
@@ -1200,18 +1163,18 @@ class CumbiaApp(ctk.CTk):
             return
 
         tab_name = self._tabs.get()
-        section_type = 'circular' if 'Circolare' in tab_name else 'rectangular'
+        section_type = 'circular' if tab_name == self._tab_cir_name else 'rectangular'
 
         try:
             params = self._collect_params(section_type)
         except Exception as e:
-            messagebox.showerror('Errore parametri', f'Errore nella lettura dei parametri:\n{e}')
+            messagebox.showerror(T('param_error'), f'{T("msg_param_error")}{e}')
             return
 
         # "Save as" dialog: ask subfolder name
         dialog = ctk.CTkInputDialog(
-            text='Nome cartella di salvataggio:',
-            title='Salva con nome',
+            text=T('save_folder_prompt'),
+            title=T('save_as_title'),
         )
         dialog.geometry('380x180')
         subfolder = dialog.get_input()
@@ -1231,13 +1194,13 @@ class CumbiaApp(ctk.CTk):
         try:
             os.makedirs(output_dir, exist_ok=True)
         except Exception as e:
-            messagebox.showerror('Errore', f'Impossibile creare la cartella:\n{e}')
+            messagebox.showerror(T('error'), f'{T("msg_folder_error")}{e}')
             return
 
         script_name = 'CUMBIA_CIR.py' if section_type == 'circular' else 'CUMBIA_RECT.py'
         script_path = resource_path(script_name)
         if not os.path.isfile(script_path):
-            messagebox.showerror('Errore', f'Script non trovato:\n{script_path}')
+            messagebox.showerror(T('error'), f'{T("msg_script_missing")}{script_path}')
             return
 
         # copy logo to output dir
@@ -1257,7 +1220,7 @@ class CumbiaApp(ctk.CTk):
 
         self._running = True
         self._run_btn.configure(state='disabled')
-        self._status.configure(text='Analisi in corso... attendere.')
+        self._status.configure(text=T('running'))
         self.update_idletasks()
 
         import matplotlib
@@ -1289,12 +1252,12 @@ class CumbiaApp(ctk.CTk):
             if os.path.isfile(pdf_file):
                 os.startfile(pdf_file)
 
-            self._status.configure(text=f'Completato! File salvati in: {output_dir}')
-            messagebox.showinfo('Completato',
-                                f'Analisi completata!\n\nFile salvati in:\n{output_dir}')
+            self._status.configure(text=f'{T("completed_status")}{output_dir}')
+            messagebox.showinfo(T('completed'),
+                                f'{T("msg_completed")}{output_dir}')
         except Exception as e:
-            self._status.configure(text='Errore durante l\'analisi.')
-            messagebox.showerror('Errore', f'{type(e).__name__}: {e}')
+            self._status.configure(text=T('error_status'))
+            messagebox.showerror(T('error'), f'{type(e).__name__}: {e}')
         finally:
             os.chdir(original_dir)
             if original_env:
