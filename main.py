@@ -15,6 +15,7 @@ from tkinter import messagebox
 import customtkinter as ctk
 import numpy as np
 from i18n import T, get_tips, get_lang, set_lang, save_preference
+import material_models as mm
 
 # PyInstaller: analysis scripts import these at runtime via exec(),
 # so we import them here to ensure they are bundled.
@@ -446,16 +447,17 @@ class SectionCanvas(tk.Canvas):
 
         # 6b - wi Mander arrows (red): gaps between RESTRAINED bars only
         if len(mlr) > 0:
-            Bnet = B - 2 * clb
-            Hnet = H - 2 * clb
             n_tb = max(ncy, 2)
             n_sd = max(ncx, 2)
             avg_dbl_tb = (float(mlr[0][2]) + float(mlr[-1][2])) / 2
             avg_dbl_side = sum(float(r[2]) for r in mlr) / len(mlr)
+            # gap values come from the shared calculation; only the arrow
+            # geometry below is specific to the drawing
+            wi_conf = mm.wi_mander(mlr, B, H, clb, ncx, ncy)
 
             # top face restrained bars
             if n_tb > 1:
-                wi_conf_tb = (Bnet - n_tb * avg_dbl_tb) / (n_tb - 1)
+                wi_conf_tb = float(wi_conf[0])
                 edge_r = clb + avg_dbl_tb / 2
                 xs_r = list(np.linspace(edge_r, B - edge_r, n_tb))
                 top_depth = float(mlr[0][0])
@@ -471,7 +473,7 @@ class SectionCanvas(tk.Canvas):
 
             # left side restrained bars
             if n_sd > 1:
-                wi_conf_sd = (Hnet - n_sd * avg_dbl_side) / (n_sd - 1)
+                wi_conf_sd = float(wi_conf[-1])
                 edge_v = clb + avg_dbl_side / 2
                 ys_r = list(np.linspace(edge_v, H - edge_v, n_sd))
                 for j in range(len(ys_r) - 1):
@@ -939,7 +941,12 @@ class CumbiaApp(ctk.CTk):
         return wi
 
     def _compute_wi_mander(self, mlr):
-        """Wi between RESTRAINED bars only (for Mander confinement model)."""
+        """Wi between RESTRAINED bars only (for Mander confinement model).
+
+        Delegates to material_models.wi_mander, the same function
+        CUMBIA_RECT.py uses, so the GUI and the engine cannot disagree.
+        Returns plain floats: the result is written to the parameter JSON.
+        """
         try:
             B = float(self._vars_rect.get('B', tk.StringVar(value='300')).get())
             H = float(self._vars_rect.get('H', tk.StringVar(value='400')).get())
@@ -952,24 +959,7 @@ class CumbiaApp(ctk.CTk):
         if len(mlr) == 0:
             return []
 
-        Bnet = B - 2 * clb
-        Hnet = H - 2 * clb
-        n_tb = max(ncy, 2)
-        n_sd = max(ncx, 2)
-
-        avg_dbl_tb = (mlr[0][2] + mlr[-1][2]) / 2
-        avg_dbl_side = sum(r[2] for r in mlr) / len(mlr)
-
-        wi = []
-        tb_gap = (Bnet - n_tb * avg_dbl_tb) / max(n_tb - 1, 1)
-        wi.extend([tb_gap] * (n_tb - 1))
-        wi.extend([tb_gap] * (n_tb - 1))
-
-        sd_gap = (Hnet - n_sd * avg_dbl_side) / max(n_sd - 1, 1)
-        wi.extend([sd_gap] * (n_sd - 1))
-        wi.extend([sd_gap] * (n_sd - 1))
-
-        return wi
+        return [float(v) for v in mm.wi_mander(mlr, B, H, clb, ncx, ncy)]
 
     # ---- refresh canvases -------------------------------------------------
     def _refresh_cir_canvas(self, *_):

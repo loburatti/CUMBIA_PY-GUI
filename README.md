@@ -50,6 +50,8 @@ This version includes bug fixes and enhancements documented in detail in [CHANGE
 ### 1. Confinement Model Fix (CUMBIA_RECT.py)
 The automatic `wi` calculation now correctly computes clear distances between **restrained bars only** (tied by stirrup corners or crossties), as required by the Mander confinement model. The original code computed distances between all peripheral bars regardless of restraint.
 
+The calculation lives in a single place, `material_models.wi_mander()`, shared by the GUI, the section preview and the analysis script, so the three can no longer disagree. Script mode now defaults to `wi_input = [0]` (automatic), matching what the GUI computes for the same section.
+
 ### 2. Buckling Models Fix (CUMBIA_RECT.py)
 - **Goodnight et al. (2015):** strain-based and drift-based formulas now use the average transverse steel ratio across both directions instead of `rho_y` (Y-direction only).
 - **Moyer & Kowalsky:** the critical strain formula now uses the extreme fiber bar diameter (`dbl_extreme`) instead of the maximum bar diameter in the section.

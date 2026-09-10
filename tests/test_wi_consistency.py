@@ -139,3 +139,59 @@ def test_wi_enters_confinement_through_sum_of_squares():
     b = run_engine('rectangular', {'name': 'wi_b', 'interaction': 'n',
                                    'wi_input': swapped})
     assert a['fc'].max() == pytest.approx(b['fc'].max(), rel=1e-12)
+
+
+# ------------------------------------------------ single source of truth ----
+def test_both_callers_delegate_to_material_models(gui):
+    """GUI and engine must both go through material_models.wi_mander.
+
+    If either grows its own copy of the formula again, the values may still
+    agree on the day it is written and drift later; this checks the shared
+    function is what actually produces them.
+    """
+    import material_models as mm
+
+    for label, mlr, B, H, clb, ncx, ncy in CASES:
+        shared = list(np.asarray(mm.wi_mander(mlr, B, H, clb, ncx, ncy), float))
+        assert wi_from_gui(gui, mlr, B, H, clb, ncx, ncy) == pytest.approx(shared), (
+            f'{label}: the GUI no longer matches material_models.wi_mander')
+        assert wi_from_engine(mlr, B, H, clb, ncx, ncy) == pytest.approx(shared), (
+            f'{label}: the engine no longer matches material_models.wi_mander')
+
+
+def test_the_wi_formula_appears_only_once_in_the_sources():
+    """A guard against a copy-paste reappearing in either caller."""
+    import os
+    import re
+
+    from tests.conftest import REPO_ROOT
+
+    # the distinctive term of the Mander gap formula
+    pattern = re.compile(r'Bnet\s*-\s*n_restrained_tb|Bnet\s*-\s*n_tb\s*\*')
+    hits = []
+    for name in ('main.py', 'CUMBIA_RECT.py', 'material_models.py'):
+        src = open(os.path.join(REPO_ROOT, name), encoding='utf-8').read()
+        if pattern.search(src):
+            hits.append(name)
+    assert hits == ['material_models.py'], (
+        f'the wi formula should live only in material_models.py, found in {hits}')
+
+
+def test_gui_returns_plain_floats_for_the_parameter_file(gui):
+    """wi_input is written to JSON, which cannot serialise numpy types."""
+    import json
+
+    wi = wi_from_gui(gui, AUTO_MLR, 300.0, 400.0, 40.0, 3, 4)
+    assert all(type(v) is float for v in wi), f'non-float values: {wi}'
+    json.dumps({'wi_input': wi})
+
+
+def test_engine_default_uses_the_automatic_calculation():
+    """CUMBIA_RECT.py ships wi_input = [0], so script mode and GUI mode
+    analyse the same section with the same confinement."""
+    import material_models as mm
+
+    ns = run_engine('rectangular', {'name': 'wi_default', 'interaction': 'n'})
+    expected = mm.wi_mander(ns['MLR'], ns['B'], ns['H'], ns['clb'],
+                            ns['ncx'], ns['ncy'])
+    assert np.allclose(np.asarray(ns['wi'], float), expected)
