@@ -99,6 +99,39 @@ Each analysis produces:
 - **Multi-page PDF report** (`_Full_Report.pdf`) with all figures and formatted text
 - **Individual PNG figures** (stress-strain, moment-curvature, force-displacement, buckling models, limit states, interaction diagram)
 
+## Testing
+
+The project ships a pytest suite covering the material models, the wi
+confinement calculation, end-to-end regression of both engines, every option
+the GUI exposes, and the translation layer.
+
+```bash
+pip install -r requirements-dev.txt
+python -m pytest
+```
+
+The suite runs both analysis engines many times, so a full run takes a few
+minutes. To run one layer only:
+
+```bash
+python -m pytest tests/test_material_models.py   # fast unit tests
+python -m pytest tests/test_wi_consistency.py    # GUI vs script wi agreement
+python -m pytest tests/test_regression_golden.py # numerical regression
+```
+
+`tests/test_regression_golden.py` compares full runs against reference results
+recorded in `tests/golden/`. After an intentional change to the analysis,
+re-record them and review the diff before committing:
+
+```bash
+CUMBIA_REGEN_GOLDEN=1 python -m pytest tests/test_regression_golden.py
+```
+
+The GUI-logic tests import `main.py` without a display: when Tk is unavailable
+they substitute the headless stubs in `tests/_stubs.py`, so the suite runs on a
+bare CI runner. Every push is tested on Python 3.10 and 3.12 by
+`.github/workflows/tests.yml`.
+
 ## License
 
 MIT License — see [LICENSE](LICENSE) for details.

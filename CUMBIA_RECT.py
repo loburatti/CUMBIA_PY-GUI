@@ -615,7 +615,7 @@ ax3_p3.set_yticks(desired_m_ticks)
 
 ax1_p3.set_xlabel('Curvature (1/m)')
 ax1_p3.set_ylabel('Moment (kN-m)')
-ax2_p3.set_xlabel('Curvature Ductility ($\mu_{\phi}$)')
+ax2_p3.set_xlabel(r'Curvature Ductility ($\mu_{\phi}$)')
 ax3_p3.set_ylabel('$M / M_n$')
 ax1_p3.set_title('Moment - Curvature Relation', fontweight='bold', pad=15)
 ax1_p3.legend(loc='lower right')
@@ -975,7 +975,7 @@ ax1_p6.set_xticklabels([f"{t:.3f}" for t in (desired_mu_d_ticks * dy)])
 ax2_p6 = ax1_p6.twiny()
 ax2_p6.set_xlim([x / dy for x in ax1_p6.get_xlim()])
 ax2_p6.set_xticks(desired_mu_d_ticks)
-ax2_p6.set_xlabel('Displacement Ductility ($\mu_{\Delta}$)')
+ax2_p6.set_xlabel(r'Displacement Ductility ($\mu_{\Delta}$)')
 
 if P_kN != 0:
     fp_ratio_max = int(np.ceil(ax1_p6.get_ylim()[1] / abs(P_kN) * 10))
@@ -1037,7 +1037,7 @@ ax1_p7.set_xticklabels([f"{t:.3f}" for t in (desired_mu_d_ticks * dy)])
 ax2_p7 = ax1_p7.twiny()
 ax2_p7.set_xlim([x / dy for x in ax1_p7.get_xlim()])
 ax2_p7.set_xticks(desired_mu_d_ticks)
-ax2_p7.set_xlabel('Displacement Ductility ($\mu_{\Delta}$)')
+ax2_p7.set_xlabel(r'Displacement Ductility ($\mu_{\Delta}$)')
 
 if P_kN != 0:
     ax1_p7.set_yticks(desired_fp_ticks * abs(P_kN))

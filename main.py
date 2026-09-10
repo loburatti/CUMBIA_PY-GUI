@@ -8,6 +8,7 @@ import json
 import math
 import tempfile
 import shutil
+import subprocess
 import webbrowser
 import tkinter as tk
 from tkinter import messagebox
@@ -30,6 +31,24 @@ def resource_path(relative_path):
     if hasattr(sys, '_MEIPASS'):
         return os.path.join(sys._MEIPASS, relative_path)
     return os.path.join(os.path.dirname(os.path.abspath(__file__)), relative_path)
+
+
+def open_with_default_app(path):
+    """Open a file with the OS default application.
+
+    Windows uses os.startfile, which does not exist on other platforms;
+    macOS uses 'open' and Linux 'xdg-open'. Returns True on success.
+    """
+    try:
+        if sys.platform.startswith('win'):
+            os.startfile(path)
+        elif sys.platform == 'darwin':
+            subprocess.Popen(['open', path])
+        else:
+            subprocess.Popen(['xdg-open', path])
+        return True
+    except Exception:
+        return False
 
 
 # ==========================================================================
@@ -150,6 +169,37 @@ RECT_PARAMS = [
 ]
 
 INT_KEYS = {'nbl', 'itermax', 'ncl', 'ncx', 'ncy', 'n_top_bot', 'n_side'}
+
+
+def _numeric_keys(schema):
+    """Keys the schema declares as numeric entries (default value is a number).
+
+    Derived from the schema itself so it cannot drift from the form layout.
+    'ecdam' is excluded: it accepts either a number or the literal 'twth'.
+    """
+    return {row[0] for row in schema
+            if len(row) > 3 and row[3] == 'entry'
+            and isinstance(row[2], (int, float))
+            and row[0] != 'ecdam'}
+
+
+CIR_NUMERIC_KEYS = _numeric_keys(CIR_PARAMS)
+RECT_NUMERIC_KEYS = _numeric_keys(RECT_PARAMS)
+
+# label shown in error messages, per key
+CIR_LABELS = {row[0]: row[1] for row in CIR_PARAMS if row[0] != 'section'}
+RECT_LABELS = {row[0]: row[1] for row in RECT_PARAMS if row[0] != 'section'}
+# stirrup / MLR fields live outside the schema tables
+RECT_LABELS.update({
+    'dv': 'stirrup_diam',
+    's': 'spacing_s',
+    'ncx': 'legs_ncx',
+    'ncy': 'legs_ncy',
+    'n_top_bot': 'n_bars_top_bot',
+    'n_side': 'n_bars_per_side',
+    'Dbl_auto': 'bar_diameter',
+    'wi_input': 'wi_label',
+})
 
 
 # ==========================================================================
@@ -565,15 +615,15 @@ class CumbiaApp(ctk.CTk):
         title_bar = ctk.CTkFrame(self, height=44, corner_radius=0)
         title_bar.pack(fill='x', padx=0, pady=0)
         ctk.CTkLabel(title_bar, text='  CUMBIA_PY 0.3', font=('Segoe UI', 16, 'bold')).pack(side='left', padx=10)
-        ctk.CTkLabel(title_bar, text='Analysis of Reinforced Concrete Members',
+        ctk.CTkLabel(title_bar, text=T('app_subtitle'),
                      font=('Segoe UI', 11)).pack(side='left', padx=6)
 
-        self._theme_switch = ctk.CTkSwitch(title_bar, text='Dark', command=self._toggle_theme,
+        self._theme_switch = ctk.CTkSwitch(title_bar, text=T('theme_dark'), command=self._toggle_theme,
                                            width=50, height=22)
         self._theme_switch.select()
         self._theme_switch.pack(side='right', padx=14)
 
-        ctk.CTkButton(title_bar, text='About', width=60, height=26,
+        ctk.CTkButton(title_bar, text=T('about'), width=60, height=26,
                       fg_color='transparent', border_width=1,
                       command=self._show_about).pack(side='right', padx=(0, 6))
 
@@ -618,7 +668,8 @@ class CumbiaApp(ctk.CTk):
     def _toggle_theme(self):
         mode = 'dark' if self._theme_switch.get() else 'light'
         ctk.set_appearance_mode(mode)
-        self._theme_switch.configure(text='Dark' if mode == 'dark' else 'Light')
+        self._theme_switch.configure(
+            text=T('theme_dark') if mode == 'dark' else T('theme_light'))
         self._cir_canvas.request_redraw()
         self._rect_canvas.request_redraw()
 
@@ -647,16 +698,15 @@ class CumbiaApp(ctk.CTk):
             pass
 
         ctk.CTkLabel(win, text='CUMBIA_PY', font=('Segoe UI', 20, 'bold')).pack()
-        ctk.CTkLabel(win, text='Version 0.3', font=('Segoe UI', 12)).pack(pady=(0, 10))
+        ctk.CTkLabel(win, text=T('about_version'), font=('Segoe UI', 12)).pack(pady=(0, 10))
 
-        ctk.CTkLabel(win, text='Moment-Curvature, Force-Displacement\n'
-                               'and Interaction Analysis of RC Members',
+        ctk.CTkLabel(win, text=T('about_desc'),
                      font=('Segoe UI', 11), justify='center').pack(pady=(0, 12))
 
         credits = ctk.CTkFrame(win, fg_color='transparent')
         credits.pack(pady=(0, 8))
 
-        ctk.CTkLabel(credits, text='Original analysis engine:',
+        ctk.CTkLabel(credits, text=T('about_engine'),
                      font=('Segoe UI', 10), text_color='gray').pack()
         link_orig = ctk.CTkLabel(credits,
                                  text='CUMBIA_PY by Luis Montejo (MIT License)',
@@ -668,12 +718,12 @@ class CumbiaApp(ctk.CTk):
 
         ctk.CTkLabel(credits, text='', height=6).pack()
 
-        ctk.CTkLabel(credits, text='GUI, enhancements, and distribution:',
+        ctk.CTkLabel(credits, text=T('about_gui'),
                      font=('Segoe UI', 10), text_color='gray').pack()
         ctk.CTkLabel(credits, text='Lorenzo Buratti',
                      font=('Segoe UI', 11, 'bold')).pack()
 
-        ctk.CTkLabel(win, text='Released under the MIT License',
+        ctk.CTkLabel(win, text=T('about_license'),
                      font=('Segoe UI', 10), text_color='gray').pack(pady=(8, 4))
 
         ctk.CTkButton(win, text=T('close'), width=100, command=win.destroy).pack(pady=(6, 14))
@@ -795,7 +845,7 @@ class CumbiaApp(ctk.CTk):
 
         ctk.CTkLabel(sw_frame, text=T('clear_dist_wi'),
                      font=('Segoe UI', 11, 'bold')).pack(anchor='w', padx=6, pady=(10, 0))
-        self._wi_auto = ctk.CTkSwitch(sw_frame, text='Auto', command=self._toggle_wi_auto)
+        self._wi_auto = ctk.CTkSwitch(sw_frame, text=T('auto'), command=self._toggle_wi_auto)
         self._wi_auto.select()
         self._wi_auto.pack(anchor='w', padx=6, pady=2)
         self._v_wi = tk.StringVar(value='')
@@ -806,7 +856,7 @@ class CumbiaApp(ctk.CTk):
         Tip(self._wi_entry, get_tips().get('wi_input', ''))
         self._v_wi.trace_add('write', lambda *_: self._refresh_rect_canvas())
 
-        self._wi_display = ctk.CTkLabel(sw_frame, text='wi = []', anchor='w',
+        self._wi_display = ctk.CTkLabel(sw_frame, text=f'{T("wi_label")} = []', anchor='w',
                                         font=('Consolas', 9))
         self._wi_display.pack(anchor='w', padx=6, pady=2)
 
@@ -965,7 +1015,7 @@ class CumbiaApp(ctk.CTk):
                 wi_display = self._compute_wi(mlr)
                 wi_mander = self._compute_wi_mander(mlr)
                 self._wi_display.configure(
-                    text=f'wi Mander = [{", ".join(f"{v:.0f}" for v in wi_mander)}]')
+                    text=f'{T("wi_mander_label")} = [{", ".join(f"{v:.0f}" for v in wi_mander)}]')
             else:
                 try:
                     wi_mander = [float(x.strip()) for x in self._v_wi.get().split(',') if x.strip()]
@@ -973,7 +1023,7 @@ class CumbiaApp(ctk.CTk):
                     wi_mander = []
                 wi_display = wi_mander
                 self._wi_display.configure(
-                    text=f'wi (manuale) = [{", ".join(f"{v:.0f}" for v in wi_mander)}]')
+                    text=f'{T("wi_manual_label")} = [{", ".join(f"{v:.0f}" for v in wi_mander)}]')
             p['_wi'] = wi_display
             p['_wi_mander'] = wi_mander
 
@@ -1028,36 +1078,56 @@ class CumbiaApp(ctk.CTk):
 
     # ---- collect all params into dict -------------------------------------
     def _collect_params(self, section_type):
-        src = self._vars_cir if section_type == 'circular' else self._vars_rect
+        if section_type == 'circular':
+            src, numeric, labels = self._vars_cir, CIR_NUMERIC_KEYS, CIR_LABELS
+        else:
+            src, numeric, labels = self._vars_rect, RECT_NUMERIC_KEYS, RECT_LABELS
         params = {}
+
+        def as_number(key, raw, to_int=False):
+            """Parse a numeric field, naming the offending field on failure."""
+            try:
+                val = float(raw)
+            except ValueError:
+                label = T(labels.get(key, key))
+                raise ValueError(f'{label}: {T("msg_not_a_number")} "{raw}"')
+            if not math.isfinite(val):
+                label = T(labels.get(key, key))
+                raise ValueError(f'{label}: {T("msg_not_a_number")} "{raw}"')
+            return int(val) if to_int else val
 
         for key, var in src.items():
             raw = var.get().strip()
             if key == 'ecdam':
-                params[key] = 'twth' if raw.lower() == 'twth' else float(raw)
+                if raw.lower() == 'twth':
+                    params[key] = 'twth'
+                else:
+                    params[key] = as_number(key, raw)
                 continue
-            try:
-                val = float(raw)
-                params[key] = int(val) if key in INT_KEYS else val
-            except ValueError:
+            if key in numeric:
+                params[key] = as_number(key, raw, to_int=key in INT_KEYS)
+            else:
                 params[key] = raw
 
         if params.get('Ec', 0) == 0:
             params['Ec'] = 5000 * (params.get('fpc', 35) ** 0.5)
 
         if section_type == 'rectangular':
-            params['dv'] = float(self._v_dv.get())
-            params['s'] = float(self._v_s.get())
-            params['ncx'] = int(float(self._v_ncx.get()))
-            params['ncy'] = int(float(self._v_ncy.get()))
+            params['dv'] = as_number('dv', self._v_dv.get().strip())
+            params['s'] = as_number('s', self._v_s.get().strip())
+            params['ncx'] = as_number('ncx', self._v_ncx.get().strip(), to_int=True)
+            params['ncy'] = as_number('ncy', self._v_ncy.get().strip(), to_int=True)
 
             is_auto = bool(self._auto_var.get())
             params['auto_generate_MLR'] = is_auto
 
             if is_auto:
-                params['n_top_bot'] = int(float(self._v_n_top_bot.get()))
-                params['n_side'] = int(float(self._v_n_side.get()))
-                params['Dbl_auto'] = float(self._v_Dbl_auto.get())
+                params['n_top_bot'] = as_number(
+                    'n_top_bot', self._v_n_top_bot.get().strip(), to_int=True)
+                params['n_side'] = as_number(
+                    'n_side', self._v_n_side.get().strip(), to_int=True)
+                params['Dbl_auto'] = as_number(
+                    'Dbl_auto', self._v_Dbl_auto.get().strip())
             else:
                 params['auto_generate_MLR'] = False
                 params['custom_MLR'] = self._mlr_editor.get_mlr()
@@ -1066,7 +1136,9 @@ class CumbiaApp(ctk.CTk):
                 mlr = self._compute_auto_mlr() if is_auto else self._mlr_editor.get_mlr()
                 params['wi_input'] = self._compute_wi_mander(mlr)
             else:
-                params['wi_input'] = [float(x.strip()) for x in self._v_wi.get().split(',') if x.strip()]
+                params['wi_input'] = [
+                    as_number('wi_input', x.strip())
+                    for x in self._v_wi.get().split(',') if x.strip()]
 
         return params
 
@@ -1247,10 +1319,11 @@ class CumbiaApp(ctk.CTk):
             ns = {'__builtins__': __builtins__, '__name__': '__main__', '__file__': script_path}
             exec(compile(code, script_path, 'exec'), ns)
 
-            # open PDF report
+            # open PDF report — never let a failed viewer launch mask a
+            # successful analysis
             pdf_file = os.path.join(output_dir, f'{run_name}_Full_Report.pdf')
             if os.path.isfile(pdf_file):
-                os.startfile(pdf_file)
+                open_with_default_app(pdf_file)
 
             self._status.configure(text=f'{T("completed_status")}{output_dir}')
             messagebox.showinfo(T('completed'),

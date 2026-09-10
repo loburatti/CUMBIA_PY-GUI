@@ -520,7 +520,7 @@ ax3_p3.set_yticks(desired_m_ticks)
 
 ax1_p3.set_xlabel('Curvature (1/m)')
 ax1_p3.set_ylabel('Moment (kN-m)')
-ax2_p3.set_xlabel('Curvature Ductility ($\mu_{\phi}$)')
+ax2_p3.set_xlabel(r'Curvature Ductility ($\mu_{\phi}$)')
 ax3_p3.set_ylabel('$M / M_n$')
 ax1_p3.set_title('Moment - Curvature Relation', fontweight='bold', pad=15)
 ax1_p3.legend(loc='lower right')
@@ -905,7 +905,7 @@ ax1_p6.set_xticklabels([f"{t:.3f}" for t in (desired_mu_d_ticks * dy)])
 ax2_p6 = ax1_p6.twiny()
 ax2_p6.set_xlim([x / dy for x in ax1_p6.get_xlim()])
 ax2_p6.set_xticks(desired_mu_d_ticks)
-ax2_p6.set_xlabel('Displacement Ductility ($\mu_{\Delta}$)')
+ax2_p6.set_xlabel(r'Displacement Ductility ($\mu_{\Delta}$)')
 
 # Secondary Y: F / P_axial
 if P_kN != 0:
@@ -971,7 +971,7 @@ ax1_p7.set_xticklabels([f"{t:.3f}" for t in (desired_mu_d_ticks * dy)])
 ax2_p7 = ax1_p7.twiny()
 ax2_p7.set_xlim([x / dy for x in ax1_p7.get_xlim()])
 ax2_p7.set_xticks(desired_mu_d_ticks)
-ax2_p7.set_xlabel('Displacement Ductility ($\mu_{\Delta}$)')
+ax2_p7.set_xlabel(r'Displacement Ductility ($\mu_{\Delta}$)')
 
 # Secondary Y: F / P_axial
 if P_kN != 0:
@@ -1374,12 +1374,13 @@ add_line(f"   Goodnight et al. (2016) Tensile Hinge (Lpr_t):       {Lpr_t_rep/10
 add_line(f"   Nominal Strain Penetration Length (Lsp):      {Lsp_nom_rep/1000:.3f} m")
 add_line("")
 
-add_line(f"Tension Yield: {PTid:.2f} N")
-add_line(f"Compression Yield: {PCid:.2f} N")
-add_line(f"Moment Yield: {Mn*1000:.2f} N-m")
-add_line("")
-
 if interaction.lower() == 'y':
+    # PTid only exists when the interaction analysis has run; mirrors the
+    # guard already present in CUMBIA_RECT.py
+    add_line(f"Tension Yield: {PTid:.2f} N")
+    add_line(f"Compression Yield: {PCid:.2f} N")
+    add_line(f"Moment Yield: {Mn*1000:.2f} N-m")
+    add_line("")
     add_line("NLTHA Approximation:")
     add_line("")
     add_line(f"PT:  {-PTid/1000:.1f} kN")

@@ -10,6 +10,11 @@ __pycache__/
 *_Full_Report.pdf
 *_Fig*.png
 
+# Test tooling
+.pytest_cache/
+.coverage
+htmlcov/
+
 # Temp
 *.tmp
 *.json.tmp
