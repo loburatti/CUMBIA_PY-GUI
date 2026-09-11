@@ -227,7 +227,7 @@ class Tip:
         lbl = tk.Label(tw, text=self.text, justify='left',
                        background='#333', foreground='#eee',
                        relief='solid', borderwidth=1,
-                       font=('Segoe UI', 11), wraplength=420, padx=8, pady=6)
+                       font=('Segoe UI', 13), wraplength=480, padx=10, pady=7)
         lbl.pack()
 
     def _hide(self, _event=None):
@@ -254,13 +254,13 @@ class SectionCanvas(tk.Canvas):
     C_LEG      = ('#70c070', '#228b22')
     C_TXT      = ('#cccccc', '#333333')
 
-    # Drawing label sizes. Kept here so they can be adjusted in one place:
-    # the previous 7-8 pt values were unreadable on a large display.
-    F_DIM      = ('Segoe UI', 10)            # H, B, clb and the D callout
-    F_DIM_SM   = ('Segoe UI', 9)             # the tighter cover callout
-    F_INFO     = ('Segoe UI', 10, 'bold')    # the ncx / ncy / s block
-    F_WI       = ('Segoe UI', 9)             # bar-to-bar gaps
-    F_WI_CONF  = ('Segoe UI', 9, 'bold')     # Mander restrained-bar gaps
+    # Drawing label sizes, in points before scaling. Adjust here: every label
+    # in the preview derives from these five numbers.
+    S_DIM      = 13      # H, B and the D callout
+    S_DIM_SM   = 11      # the tighter cover callout
+    S_INFO     = 13      # the ncx / ncy / s block
+    S_WI       = 11      # bar-to-bar gaps
+    S_WI_CONF  = 11      # Mander restrained-bar gaps
 
     def __init__(self, parent, **kw):
         kw.setdefault('highlightthickness', 0)
@@ -272,6 +272,43 @@ class SectionCanvas(tk.Canvas):
 
     def _c(self, pair):
         return pair[0] if self._dark else pair[1]
+
+    def _font(self, size, bold=False):
+        """A canvas font that follows the interface scaling.
+
+        A tk.Canvas draws its own text and is not covered by CustomTkinter's
+        widget scaling, so on a scaled display these labels came out smaller
+        than every other element on screen. Reading the same factor keeps
+        them in proportion; if it cannot be read, the unscaled size is used.
+        """
+        try:
+            factor = ctk.ScalingTracker.get_widget_scaling(self)
+        except Exception:
+            factor = 1.0
+        if not isinstance(factor, (int, float)) or factor <= 0:
+            factor = 1.0
+        scaled = max(int(round(size * factor)), size)
+        return ('Segoe UI', scaled, 'bold') if bold else ('Segoe UI', scaled)
+
+    @property
+    def F_DIM(self):
+        return self._font(self.S_DIM)
+
+    @property
+    def F_DIM_SM(self):
+        return self._font(self.S_DIM_SM)
+
+    @property
+    def F_INFO(self):
+        return self._font(self.S_INFO, bold=True)
+
+    @property
+    def F_WI(self):
+        return self._font(self.S_WI)
+
+    @property
+    def F_WI_CONF(self):
+        return self._font(self.S_WI_CONF, bold=True)
 
     def request_redraw(self):
         if not self._pending:
