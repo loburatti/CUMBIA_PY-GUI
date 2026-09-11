@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import material_models as mm  
+import plot_utils as pu
 from matplotlib.backends.backend_pdf import PdfPages
 plt.close('all')
 
@@ -945,8 +946,9 @@ ax2_p6.set_xticks(desired_mu_d_ticks)
 ax2_p6.set_xlabel(r'Displacement Ductility ($\mu_{\Delta}$)')
 
 if P_kN != 0:
-    fp_ratio_max = int(np.ceil(ax1_p6.get_ylim()[1] / abs(P_kN) * 10))
-    desired_fp_ticks = np.array([i/10 for i in range(0, fp_ratio_max + 1, 4)])
+    # a fixed step left the axis blank apart from zero whenever the axial
+    # load dwarfed the force scale; pu.ratio_ticks adapts the step instead
+    desired_fp_ticks = pu.ratio_ticks(ax1_p6.get_ylim()[1], P_kN)
     ax1_p6.set_yticks(desired_fp_ticks * abs(P_kN))
     ax3_p6 = ax1_p6.twinx()
     ax3_p6.set_ylim([y / abs(P_kN) for y in ax1_p6.get_ylim()])
