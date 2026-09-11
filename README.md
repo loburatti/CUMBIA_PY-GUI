@@ -134,6 +134,32 @@ they substitute the headless stubs in `tests/_stubs.py`, so the suite runs on a
 bare CI runner. Every push is tested on Python 3.10 and 3.12 by
 `.github/workflows/tests.yml`.
 
+## Building the Windows bundle
+
+Releases are built by `.github/workflows/build-windows.yml` on a clean
+`windows-latest` runner, not on a developer machine. Pushing a `v*` tag builds
+the bundle, verifies it, and attaches the zip to the release; the workflow can
+also be started by hand from the Actions tab (Run workflow) to produce a test
+build without tagging.
+
+Building on a runner is also the safer option for the maintainer: Python
+embeds the absolute source path of every module in the compiled bytecode
+(`co_filename`), and PyInstaller ships that bytecode. A build made under
+`C:\Users\<name>\...` therefore carries that path — and the account name —
+into every traceback a user might see. On a runner the embedded path is the
+runner's own workspace.
+
+To build locally anyway:
+
+```bash
+pip install -r requirements.txt pyinstaller
+pyinstaller --noconfirm CUMBIA_PY.spec
+```
+
+The result is a folder, `dist/CUMBIA_PY/`, containing `CUMBIA_PY.exe` and its
+dependencies — zip that folder to distribute it. It is a portable bundle, not
+an installer: users extract and run.
+
 ## License
 
 MIT License — see [LICENSE](LICENSE) for details.
