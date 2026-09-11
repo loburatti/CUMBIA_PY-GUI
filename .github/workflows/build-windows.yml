@@ -1,0 +1,113 @@
+name: build-windows
+
+# Builds the Windows bundle on a clean runner rather than on a developer
+# machine. Besides being reproducible, this keeps local paths out of the
+# published binary: Python embeds the absolute source path of every module in
+# the compiled bytecode (co_filename), and PyInstaller ships that bytecode, so
+# a build made under C:\Users\<name>\... carries that path into every
+# traceback a user might see.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version label for the zip name (e.g. 0.3.2-test)'
+        required: false
+        default: 'dev'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Determine version label
+        id: ver
+        shell: bash
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            echo "label=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "label=${{ github.event.inputs.version }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run test suite
+        env:
+          MPLBACKEND: Agg
+        run: python -m pytest -q
+        continue-on-error: false
+
+      - name: Build with PyInstaller
+        run: pyinstaller --noconfirm CUMBIA_PY.spec
+
+      - name: Verify the bundle is complete
+        shell: bash
+        run: |
+          set -e
+          root="dist/CUMBIA_PY"
+          test -f "$root/CUMBIA_PY.exe" || { echo "::error::CUMBIA_PY.exe missing"; exit 1; }
+
+          # data files the .spec declares must actually be present
+          for f in CUMBIA_RECT.py CUMBIA_CIR.py material_models.py i18n.py logo.png LICENSE; do
+            find "$root" -name "$f" -print -quit | grep -q . \
+              || { echo "::error::missing bundled data file: $f"; exit 1; }
+          done
+
+          # customtkinter ships theme JSON and fonts via its PyInstaller hook;
+          # without them the GUI dies on startup, so fail here instead
+          find "$root" -type d -name customtkinter -print -quit | grep -q . \
+            || { echo "::error::customtkinter assets were not bundled"; exit 1; }
+          find "$root" -path '*customtkinter*' -name '*.json' -print -quit | grep -q . \
+            || { echo "::error::customtkinter theme files were not bundled"; exit 1; }
+
+          echo "Bundle looks complete."
+          du -sh "$root"
+
+      - name: Check no build-machine paths leaked into the binary
+        shell: bash
+        run: |
+          # The runner's own workspace path is expected; a C:\Users\... path
+          # would mean the build captured a real user's directory.
+          if grep -a -o -E 'C:\\\\Users\\\\[A-Za-z0-9._-]+' dist/CUMBIA_PY/CUMBIA_PY.exe | sort -u | grep -v -i 'runneradmin' ; then
+            echo "::warning::a C:\\Users path is embedded in the executable"
+          else
+            echo "No personal user paths embedded."
+          fi
+
+      - name: Package
+        shell: bash
+        run: |
+          cd dist
+          7z a -tzip "CUMBIA_PY-GUI_v${{ steps.ver.outputs.label }}_win64.zip" CUMBIA_PY
+          ls -lh *.zip
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: CUMBIA_PY-GUI_v${{ steps.ver.outputs.label }}_win64
+          path: dist/*.zip
+          retention-days: 30
+
+      - name: Attach to the release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.zip
