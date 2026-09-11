@@ -192,3 +192,60 @@ GUI has always passed wi explicitly.
 drawing all resolve to `material_models.wi_mander`, that the formula appears in
 no other source file, that the GUI returns JSON-serialisable floats, and that
 the engine default really does take the automatic path.
+
+---
+
+## 7. Graphical fixes (0.3.3)
+
+### 7.1 Force axis left unlabelled under high axial load
+
+**Problem:** The force-displacement figures label the left axis in kN and the
+right axis as F/P, and forced both onto shared tick positions using a step
+hardcoded at 0.4 in ratio units:
+
+```python
+fp_ratio_max = int(np.ceil(ylim / abs(P_kN) * 10))
+desired_fp_ticks = np.array([i/10 for i in range(0, fp_ratio_max + 1, 4)])
+```
+
+With `fp_ratio_max <= 3` that range yields `[0]` alone, so every tick above
+the origin fell outside the plotted range and the axis came out blank apart
+from the zero. The condition is `ylim <= 0.3 * |P_kN|`: any member whose axial
+load exceeds roughly 3.3 times the force scale. It affected both engines
+equally — it was reported on a circular section only because the repository
+defaults (P = 2000 kN) happen to fall on the working side of the threshold.
+
+**Fix:** New `plot_utils.ratio_ticks()` picks a round step (1, 2, 2.5 or 5
+times a power of ten) sized so that four to six ticks land inside the axis,
+whatever the ratio between the force scale and the axial load. Both engines
+call it, so the logic is not duplicated.
+
+**Files changed:** `plot_utils.py` (new), `CUMBIA_CIR.py`, `CUMBIA_RECT.py`,
+`CUMBIA_PY.spec` (the new module must be bundled, since the engines are
+executed from the bundle), `.github/workflows/build-windows.yml`.
+
+### 7.2 Unreadable labels in the section preview
+
+**Problem:** The dimension callouts and the wi values were drawn at 7-8 pt,
+too small to read on a large display.
+
+**Fix:** Raised to 9-10 pt and collected into named constants on
+`SectionCanvas` (`F_DIM`, `F_DIM_SM`, `F_INFO`, `F_WI`, `F_WI_CONF`) so the
+sizes can be adjusted in one place instead of at eleven call sites.
+
+**Files changed:** `main.py`.
+
+### 7.3 Unreadable parameter tooltips
+
+**Problem:** The hover help was 9 pt, wrapped at 320 px.
+
+**Fix:** 11 pt, wrapped at 420 px, with a little more padding.
+
+**Files changed:** `main.py`.
+
+### 7.4 Tests
+
+`tests/test_plot_axes.py` covers the tick helper and, more usefully, runs the
+engines at several axial loads and asserts the force axis of the real figures
+carries more than one tick, with the left and right axes aligned. Verified to
+fail against the previous formula.

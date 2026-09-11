@@ -227,7 +227,7 @@ class Tip:
         lbl = tk.Label(tw, text=self.text, justify='left',
                        background='#333', foreground='#eee',
                        relief='solid', borderwidth=1,
-                       font=('Segoe UI', 9), wraplength=320, padx=6, pady=4)
+                       font=('Segoe UI', 11), wraplength=420, padx=8, pady=6)
         lbl.pack()
 
     def _hide(self, _event=None):
@@ -253,6 +253,14 @@ class SectionCanvas(tk.Canvas):
     C_WI_CONF  = ('#ff4444', '#cc0000')
     C_LEG      = ('#70c070', '#228b22')
     C_TXT      = ('#cccccc', '#333333')
+
+    # Drawing label sizes. Kept here so they can be adjusted in one place:
+    # the previous 7-8 pt values were unreadable on a large display.
+    F_DIM      = ('Segoe UI', 10)            # H, B, clb and the D callout
+    F_DIM_SM   = ('Segoe UI', 9)             # the tighter cover callout
+    F_INFO     = ('Segoe UI', 10, 'bold')    # the ncx / ncy / s block
+    F_WI       = ('Segoe UI', 9)             # bar-to-bar gaps
+    F_WI_CONF  = ('Segoe UI', 9, 'bold')     # Mander restrained-bar gaps
 
     def __init__(self, parent, **kw):
         kw.setdefault('highlightthickness', 0)
@@ -338,7 +346,7 @@ class SectionCanvas(tk.Canvas):
         self.create_line(cx - r_out, cy + r_out + 18, cx + r_out, cy + r_out + 18,
                          fill=self._c(self.C_DIM), arrow='both', width=1)
         self.create_text(cx, cy + r_out + 28, text=f'D = {D:.0f}',
-                         fill=self._c(self.C_TXT), font=('Segoe UI', 9))
+                         fill=self._c(self.C_TXT), font=self.F_DIM)
 
     # ---- rectangular -------------------------------------------------------
     def _draw_rectangular(self):
@@ -430,7 +438,7 @@ class SectionCanvas(tk.Canvas):
                                          fill=self._c(self.C_WI), arrow='both', width=1)
                         self.create_text((ax0 + ax1) / 2, ay0 - 14,
                                          text=f'{top_gap:.0f}',
-                                         fill=self._c(self.C_WI), font=('Segoe UI', 7))
+                                         fill=self._c(self.C_WI), font=self.F_WI)
 
             for j in range(len(mlr) - 1):
                 dep0, _, d0 = float(mlr[j][0]), int(mlr[j][1]), float(mlr[j][2])
@@ -443,7 +451,7 @@ class SectionCanvas(tk.Canvas):
                                      fill=self._c(self.C_WI), arrow='both', width=1)
                     self.create_text(ax0 + 16, (ay0 + ay1) / 2,
                                      text=f'{side_gap:.0f}',
-                                     fill=self._c(self.C_WI), font=('Segoe UI', 7))
+                                     fill=self._c(self.C_WI), font=self.F_WI)
 
         # 6b - wi Mander arrows (red): gaps between RESTRAINED bars only
         if len(mlr) > 0:
@@ -469,7 +477,7 @@ class SectionCanvas(tk.Canvas):
                                          fill=self._c(self.C_WI_CONF), arrow='both', width=1)
                         self.create_text((ax0 + ax1) / 2, ay0 + 18,
                                          text=f'{wi_conf_tb:.0f}',
-                                         fill=self._c(self.C_WI_CONF), font=('Segoe UI', 7, 'bold'))
+                                         fill=self._c(self.C_WI_CONF), font=self.F_WI_CONF)
 
             # left side restrained bars
             if n_sd > 1:
@@ -484,7 +492,7 @@ class SectionCanvas(tk.Canvas):
                                          fill=self._c(self.C_WI_CONF), arrow='both', width=1)
                         self.create_text(ax0 - 14, (ay0 + ay1) / 2,
                                          text=f'{wi_conf_sd:.0f}',
-                                         fill=self._c(self.C_WI_CONF), font=('Segoe UI', 7, 'bold'),
+                                         fill=self._c(self.C_WI_CONF), font=self.F_WI_CONF,
                                          angle=90)
 
         # 7 - dimension labels
@@ -493,24 +501,24 @@ class SectionCanvas(tk.Canvas):
         hx1, hy1 = xy(-40 / sc, H)
         self.create_line(hx0, hy0, hx1, hy1, fill=self._c(self.C_DIM), arrow='both', width=1)
         self.create_text(hx0 - 14, (hy0 + hy1) / 2, text=f'H={H:.0f}',
-                         fill=self._c(self.C_TXT), font=('Segoe UI', 8), angle=90)
+                         fill=self._c(self.C_TXT), font=self.F_DIM, angle=90)
         # B (bottom)
         bx0, by0 = xy(0, H + 12 / sc)
         bx1, by1 = xy(B, H + 12 / sc)
         self.create_line(bx0, by0, bx1, by1, fill=self._c(self.C_DIM), arrow='both', width=1)
         self.create_text((bx0 + bx1) / 2, by0 + 12, text=f'B={B:.0f}',
-                         fill=self._c(self.C_TXT), font=('Segoe UI', 8))
+                         fill=self._c(self.C_TXT), font=self.F_DIM)
         # clb
         clb_x, clb_y = xy(clb, 6 / sc)
         self.create_line(xy(0, 6 / sc)[0], clb_y, clb_x, clb_y,
                          fill=self._c(self.C_DIM), width=1)
         self.create_text(clb_x + 4, clb_y, text=f'clb={clb:.0f}', anchor='w',
-                         fill=self._c(self.C_TXT), font=('Segoe UI', 7))
+                         fill=self._c(self.C_TXT), font=self.F_DIM_SM)
 
         # ncx / ncy label
         info_x, info_y = xy(B / 2, H / 2)
         self.create_text(info_x, info_y, text=f'ncx={ncx}  ncy={ncy}\ns={s_v:.0f}',
-                         fill=self._c(self.C_TXT), font=('Segoe UI', 8, 'bold'), justify='center')
+                         fill=self._c(self.C_TXT), font=self.F_INFO, justify='center')
 
 
 # ==========================================================================

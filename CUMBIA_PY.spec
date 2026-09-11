@@ -5,7 +5,7 @@ a = Analysis(
     ['main.py'],
     pathex=[],
     binaries=[],
-    datas=[('CUMBIA_RECT.py', '.'), ('CUMBIA_CIR.py', '.'), ('material_models.py', '.'), ('i18n.py', '.'), ('logo.png', '.'), ('logo.svg', '.'), ('CUMBIA_PY user_guide.pdf', '.'), ('LICENSE', '.'), ('CHANGES.md', '.')],
+    datas=[('CUMBIA_RECT.py', '.'), ('CUMBIA_CIR.py', '.'), ('material_models.py', '.'), ('plot_utils.py', '.'), ('i18n.py', '.'), ('logo.png', '.'), ('logo.svg', '.'), ('CUMBIA_PY user_guide.pdf', '.'), ('LICENSE', '.'), ('CHANGES.md', '.')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
