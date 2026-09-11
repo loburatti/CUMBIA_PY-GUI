@@ -107,8 +107,10 @@ jobs:
           path: dist/*.zip
           retention-days: 30
 
-      - name: Attach to the release
+      - name: Publish the release
         if: github.ref_type == 'tag'
         uses: softprops/action-gh-release@v2
         with:
           files: dist/*.zip
+          body_path: .github/release-notes.md
+          name: CUMBIA_PY ${{ github.ref_name }}
