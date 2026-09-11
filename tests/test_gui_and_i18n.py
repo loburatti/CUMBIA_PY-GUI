@@ -282,3 +282,26 @@ def test_gui_logic_never_constructs_a_tk_variable(gui, monkeypatch):
     assert gui.CumbiaApp._compute_wi(app, mlr)
     assert gui.CumbiaApp._compute_wi_mander(app, mlr)
     assert gui.CumbiaApp._collect_params(app, 'rectangular')['wi_input']
+
+
+# ------------------------------------------------------------- versioning ----
+VERSION = '0.3.2'
+
+
+def test_every_version_string_agrees():
+    """The version appears in several places and drifted once already: the
+    app said 0.3 while the repository was releasing 0.3.2, so saved input
+    files could not tell the two apart."""
+    import re
+
+    main_src = open(os.path.join(REPO_ROOT, 'main.py'), encoding='utf-8').read()
+    found = set(re.findall(r'CUMBIA_PY (\d+\.\d+(?:\.\d+)?)', main_src))
+    assert found == {VERSION}, f'main.py advertises {sorted(found)}'
+
+    app_version = re.search(r"'_app_version':\s*'([^']+)'", main_src)
+    assert app_version and app_version.group(1) == VERSION, (
+        '_app_version written into saved parameter files is out of step')
+
+    for lang, table in _string_tables()['_STRINGS'].items():
+        assert VERSION in table['about_version'], (
+            f"{lang}: About dialog shows {table['about_version']!r}")
