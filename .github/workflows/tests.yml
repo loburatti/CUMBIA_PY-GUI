@@ -1,0 +1,38 @@
+name: tests
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.10', '3.12']
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          # customtkinter needs a Tk build that CI runners do not always have;
+          # the suite falls back to headless stubs (tests/_stubs.py), so it is
+          # installed best-effort only.
+          pip install numpy pandas matplotlib openpyxl pytest
+          pip install customtkinter || echo "customtkinter unavailable - using stubs"
+
+      - name: Run test suite
+        env:
+          MPLBACKEND: Agg
+        run: python -m pytest -q

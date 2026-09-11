@@ -50,6 +50,8 @@ This version includes bug fixes and enhancements documented in detail in [CHANGE
 ### 1. Confinement Model Fix (CUMBIA_RECT.py)
 The automatic `wi` calculation now correctly computes clear distances between **restrained bars only** (tied by stirrup corners or crossties), as required by the Mander confinement model. The original code computed distances between all peripheral bars regardless of restraint.
 
+The calculation lives in a single place, `material_models.wi_mander()`, shared by the GUI, the section preview and the analysis script, so the three can no longer disagree. Script mode now defaults to `wi_input = [0]` (automatic), matching what the GUI computes for the same section.
+
 ### 2. Buckling Models Fix (CUMBIA_RECT.py)
 - **Goodnight et al. (2015):** strain-based and drift-based formulas now use the average transverse steel ratio across both directions instead of `rho_y` (Y-direction only).
 - **Moyer & Kowalsky:** the critical strain formula now uses the extreme fiber bar diameter (`dbl_extreme`) instead of the maximum bar diameter in the section.
@@ -98,6 +100,39 @@ Each analysis produces:
 - **Excel workbook** (`_Results.xlsx`) with moment-curvature data, interaction diagram, and summary report
 - **Multi-page PDF report** (`_Full_Report.pdf`) with all figures and formatted text
 - **Individual PNG figures** (stress-strain, moment-curvature, force-displacement, buckling models, limit states, interaction diagram)
+
+## Testing
+
+The project ships a pytest suite covering the material models, the wi
+confinement calculation, end-to-end regression of both engines, every option
+the GUI exposes, and the translation layer.
+
+```bash
+pip install -r requirements-dev.txt
+python -m pytest
+```
+
+The suite runs both analysis engines many times, so a full run takes a few
+minutes. To run one layer only:
+
+```bash
+python -m pytest tests/test_material_models.py   # fast unit tests
+python -m pytest tests/test_wi_consistency.py    # GUI vs script wi agreement
+python -m pytest tests/test_regression_golden.py # numerical regression
+```
+
+`tests/test_regression_golden.py` compares full runs against reference results
+recorded in `tests/golden/`. After an intentional change to the analysis,
+re-record them and review the diff before committing:
+
+```bash
+CUMBIA_REGEN_GOLDEN=1 python -m pytest tests/test_regression_golden.py
+```
+
+The GUI-logic tests import `main.py` without a display: when Tk is unavailable
+they substitute the headless stubs in `tests/_stubs.py`, so the suite runs on a
+bare CI runner. Every push is tested on Python 3.10 and 3.12 by
+`.github/workflows/tests.yml`.
 
 ## License
 
