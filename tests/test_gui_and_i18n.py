@@ -305,3 +305,48 @@ def test_every_version_string_agrees():
     for lang, table in _string_tables()['_STRINGS'].items():
         assert VERSION in table['about_version'], (
             f"{lang}: About dialog shows {table['about_version']!r}")
+
+
+# ----------------------------------------------------- preview label sizes ----
+def test_preview_labels_are_large_enough(gui):
+    """The preview labels started at 7-8 pt and were reported unreadable
+    twice. Pin a floor so they cannot quietly shrink again."""
+    canvas = gui.SectionCanvas
+    sizes = {name: getattr(canvas, name) for name in
+             ('S_DIM', 'S_DIM_SM', 'S_INFO', 'S_WI', 'S_WI_CONF')}
+    for name, size in sizes.items():
+        assert isinstance(size, int), f'{name} is not a point size'
+        assert size >= 11, f'{name} is {size} pt — too small to read'
+
+
+def test_preview_font_helper_survives_a_missing_scaling_factor(gui):
+    """_font reads CustomTkinter's scaling; it must never raise or shrink
+    the label if that lookup fails."""
+    inst = gui.SectionCanvas.__new__(gui.SectionCanvas)
+    for bold in (False, True):
+        family, size, *rest = gui.SectionCanvas._font(
+            inst, gui.SectionCanvas.S_DIM, bold=bold)
+        assert family == 'Segoe UI'
+        assert size >= gui.SectionCanvas.S_DIM, 'scaling must not shrink text'
+        assert rest == (['bold'] if bold else [])
+
+
+def test_preview_font_helper_applies_the_scaling_factor(gui, monkeypatch):
+    inst = gui.SectionCanvas.__new__(gui.SectionCanvas)
+
+    class _Tracker:
+        @staticmethod
+        def get_widget_scaling(_widget):
+            return 1.5
+
+    monkeypatch.setattr(gui.ctk, 'ScalingTracker', _Tracker, raising=False)
+    _, size = gui.SectionCanvas._font(inst, 10)
+    assert size == 15
+
+
+def test_tooltip_text_is_large_enough(gui):
+    import re
+    src = open(os.path.join(REPO_ROOT, 'main.py'), encoding='utf-8').read()
+    tip = re.search(r"class Tip:.*?font=\('Segoe UI', (\d+)\)", src, re.S)
+    assert tip, 'tooltip font not found'
+    assert int(tip.group(1)) >= 12, f'tooltip is {tip.group(1)} pt — too small'
