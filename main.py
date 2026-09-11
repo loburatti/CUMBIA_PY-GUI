@@ -883,11 +883,25 @@ class CumbiaApp(ctk.CTk):
             self._wi_entry.configure(state='normal')
         self._refresh_rect_canvas()
 
+    # ---- read a rectangular-tab field --------------------------------------
+    def _rect_value(self, key, default):
+        """Current value of a rectangular-tab field, or `default` if absent.
+
+        Deliberately avoids building a throwaway tk.StringVar as the fallback:
+        a Tk variable cannot be created before a root window exists, and the
+        fallback was being constructed on every call even when the field was
+        present.
+        """
+        var = self._vars_rect.get(key)
+        if var is None:
+            return default
+        return var.get()
+
     # ---- compute auto MLR from n_top_bot, n_side, Dbl_auto ---------------
     def _compute_auto_mlr(self):
         try:
-            H = float(self._vars_rect.get('H', tk.StringVar(value='400')).get())
-            clb = float(self._vars_rect.get('clb', tk.StringVar(value='40')).get())
+            H = float(self._rect_value('H', '400'))
+            clb = float(self._rect_value('clb', '40'))
             n_tb = int(float(self._v_n_top_bot.get()))
             n_s  = int(float(self._v_n_side.get()))
             dbl  = float(self._v_Dbl_auto.get())
@@ -908,8 +922,8 @@ class CumbiaApp(ctk.CTk):
     def _compute_wi(self, mlr):
         """Wi between ALL bars (for display arrows showing bar positions)."""
         try:
-            B = float(self._vars_rect.get('B', tk.StringVar(value='300')).get())
-            clb = float(self._vars_rect.get('clb', tk.StringVar(value='40')).get())
+            B = float(self._rect_value('B', '300'))
+            clb = float(self._rect_value('clb', '40'))
         except (ValueError, AttributeError):
             return []
 
@@ -948,9 +962,9 @@ class CumbiaApp(ctk.CTk):
         Returns plain floats: the result is written to the parameter JSON.
         """
         try:
-            B = float(self._vars_rect.get('B', tk.StringVar(value='300')).get())
-            H = float(self._vars_rect.get('H', tk.StringVar(value='400')).get())
-            clb = float(self._vars_rect.get('clb', tk.StringVar(value='40')).get())
+            B = float(self._rect_value('B', '300'))
+            H = float(self._rect_value('H', '400'))
+            clb = float(self._rect_value('clb', '40'))
             ncx = int(float(self._v_ncx.get()))
             ncy = int(float(self._v_ncy.get()))
         except (ValueError, AttributeError):

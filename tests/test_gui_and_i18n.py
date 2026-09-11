@@ -131,14 +131,19 @@ def test_combo_options_match_what_the_engines_accept(gui):
 
 # ------------------------------------------------------------ validation ----
 class _V:
+    """Stand-in for a tk.StringVar. Entry widgets always hold text, so values
+    are stringified — except booleans, which back switches and must stay
+    boolean: str(False) is the truthy string 'False' and would silently flip
+    every `if self._wi_auto.get()` to the opposite branch."""
+
     def __init__(self, value):
-        self._v = str(value)
+        self._v = value if isinstance(value, bool) else str(value)
 
     def get(self):
         return self._v
 
 
-def _app_with(gui, section, overrides=None):
+def _app_with(gui, section, overrides=None, wi_auto=False, mlr_auto=True):
     """Minimal stand-in exposing what _collect_params reads."""
     schema = gui.CIR_PARAMS if section == 'circular' else gui.RECT_PARAMS
     values = {row[0]: _V(row[2]) for row in schema if row[0] != 'section'}
@@ -151,7 +156,7 @@ def _app_with(gui, section, overrides=None):
     app._v_ncx, app._v_ncy = _V(2), _V(2)
     app._v_n_top_bot, app._v_n_side, app._v_Dbl_auto = _V(4), _V(2), _V(25.4)
     app._v_wi = _V('169.2, 169.2, 269.2, 269.2')
-    app._auto_var, app._wi_auto = _V(True), _V(False)
+    app._auto_var, app._wi_auto = _V(mlr_auto), _V(wi_auto)
     return app
 
 
@@ -230,3 +235,50 @@ def test_open_with_default_app_never_raises(gui, tmp_path):
     """A missing viewer must not turn a successful analysis into an error."""
     missing = tmp_path / 'nope.pdf'
     assert gui.open_with_default_app(str(missing)) in (True, False)
+
+
+@pytest.mark.parametrize('wi_auto', [False, True])
+def test_both_wi_modes_produce_a_usable_wi_input(gui, wi_auto):
+    """Manual entry and the Auto switch must both yield numeric wi_input.
+
+    The Auto branch reaches _compute_wi_mander, which is also the path that
+    used to build a throwaway tk.StringVar and fail without a root window.
+    """
+    app = _app_with(gui, 'rectangular', wi_auto=wi_auto)
+    params = gui.CumbiaApp._collect_params(app, 'rectangular')
+    wi = params['wi_input']
+    assert wi, 'no wi produced'
+    assert all(isinstance(v, float) for v in wi)
+    assert all(v > 0 for v in wi)
+    json.dumps(params)
+
+
+def test_reading_a_field_does_not_need_a_tk_root(gui):
+    """_rect_value must not construct a Tk variable for its fallback."""
+    app = _app_with(gui, 'rectangular')
+    assert float(gui.CumbiaApp._rect_value(app, 'B', '999')) == 300.0
+    assert gui.CumbiaApp._rect_value(app, 'not_a_field', '42') == '42'
+
+
+def test_gui_logic_never_constructs_a_tk_variable(gui, monkeypatch):
+    """Reproduces the CI failure mode: a real tkinter with no display.
+
+    There, importing tkinter succeeds but every tk.StringVar() raises
+    "Too early to create variable: no default root window". None of the
+    pure-logic paths may construct one, so they are exercised here with a
+    StringVar that always raises.
+    """
+    def _explode(*args, **kwargs):
+        raise RuntimeError(
+            'Too early to create variable: no default root window')
+
+    monkeypatch.setattr(gui.tk, 'StringVar', _explode)
+
+    mlr = [[52.7, 4, 25.4], [347.3, 4, 25.4]]
+    app = _app_with(gui, 'rectangular', wi_auto=True)
+
+    assert gui.CumbiaApp._rect_value(app, 'B', '300') == '300.0'
+    assert gui.CumbiaApp._compute_auto_mlr(app)
+    assert gui.CumbiaApp._compute_wi(app, mlr)
+    assert gui.CumbiaApp._compute_wi_mander(app, mlr)
+    assert gui.CumbiaApp._collect_params(app, 'rectangular')['wi_input']

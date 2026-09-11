@@ -1,11 +1,16 @@
 """Headless stubs for tkinter / customtkinter.
 
 main.py builds its widget classes at import time, so importing it requires
-tk.Canvas, ctk.CTkFrame and ctk.CTk to exist as classes. On a machine with a
-real Tk (a developer box, or CI with python3-tk) the real modules are used and
-these stubs stay out of the way. Everywhere else the stubs let the *pure*
-logic in main.py — parameter schemas, validation, the wi calculation — be
-imported and tested without a display.
+tk.Canvas, ctk.CTkFrame and ctk.CTk to exist as classes.
+
+The stubs are installed unconditionally, replacing a real Tk if one is
+present. Importable is NOT the same as usable: on a GitHub runner tkinter
+imports perfectly well but has no display, so the first tk.StringVar() raises
+"Too early to create variable: no default root window". Choosing the stubs
+only when the import fails therefore behaves differently on a developer box,
+on CI, and in a bare container. Forcing them makes the suite deterministic
+everywhere — these tests target the pure logic (schemas, validation, the wi
+calculation), never Tk itself.
 """
 import sys
 import types
@@ -46,16 +51,15 @@ def _make_module(name, attrs, widget_names):
 
 
 def install():
-    """Install stub tkinter/customtkinter if the real ones are unavailable.
+    """Install the stub tkinter/customtkinter, replacing any real ones.
 
-    Returns True if stubs were installed, False if the real modules exist.
+    Always returns True. Any already-imported real module is dropped from
+    sys.modules first, along with `main`, so main.py is re-imported against
+    the stubs rather than keeping references to real Tk classes.
     """
-    try:
-        import tkinter  # noqa: F401
-        import customtkinter  # noqa: F401
-        return False
-    except Exception:
-        pass
+    for name in ('main', 'customtkinter', 'tkinter.filedialog',
+                 'tkinter.messagebox', 'tkinter'):
+        sys.modules.pop(name, None)
 
     tk = _make_module(
         'tkinter',

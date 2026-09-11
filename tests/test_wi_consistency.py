@@ -35,7 +35,13 @@ CASES = [
 
 
 def wi_from_gui(gui, mlr, B, H, clb, ncx, ncy):
-    """Call the real GUI method with a stand-in for the widget state."""
+    """Call the real GUI method with a stand-in for the widget state.
+
+    Built with CumbiaApp.__new__ rather than a bare class so that the helper
+    methods _compute_wi_mander relies on resolve as bound methods. A plain
+    stand-in would raise AttributeError, which the method swallows — the test
+    would then silently compare two empty lists.
+    """
     class _V:
         def __init__(self, value):
             self._v = str(value)
@@ -43,14 +49,14 @@ def wi_from_gui(gui, mlr, B, H, clb, ncx, ncy):
         def get(self):
             return self._v
 
-    class _App:
-        pass
-
-    app = _App()
+    app = gui.CumbiaApp.__new__(gui.CumbiaApp)
     app._vars_rect = {'B': _V(B), 'H': _V(H), 'clb': _V(clb)}
     app._v_ncx = _V(ncx)
     app._v_ncy = _V(ncy)
-    return list(gui.CumbiaApp._compute_wi_mander(app, [list(r) for r in mlr]))
+
+    wi = list(gui.CumbiaApp._compute_wi_mander(app, [list(r) for r in mlr]))
+    assert wi, 'the GUI returned no wi — the stand-in is probably incomplete'
+    return wi
 
 
 def wi_from_engine(mlr, B, H, clb, ncx, ncy):
