@@ -36,7 +36,9 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          # requirements-dev.txt pulls in requirements.txt and adds pytest,
+          # which the verification step below needs
+          pip install -r requirements-dev.txt
           pip install pyinstaller
 
       - name: Determine version label
@@ -53,7 +55,6 @@ jobs:
         env:
           MPLBACKEND: Agg
         run: python -m pytest -q
-        continue-on-error: false
 
       - name: Build with PyInstaller
         run: pyinstaller --noconfirm CUMBIA_PY.spec
