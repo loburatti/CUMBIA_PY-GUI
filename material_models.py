@@ -222,3 +222,95 @@ def wi_mander(MLR, B, H, clb, ncx, ncy):
                       (Hnet - n_restrained_side * avg_dbl_side) / (n_restrained_side - 1))
 
     return np.concatenate((wi_top, wi_top, wi_side, wi_side))
+
+
+# =============================================================================
+# Buckling model selection
+# =============================================================================
+# Shared by both engines so the rule cannot drift between rectangular and
+# circular reports. The rule itself is a decision aid supplied by CUMBIA_PY:
+# neither the CUMBIA Theory and User Guide nor the source publications rank
+# the buckling models against each other, so the report states the rule in
+# full and the engineer is free to override it.
+
+APPLICABLE = 'applicable'
+EXTRAPOLATED = 'extrapolated'
+EXCLUDED = 'excluded'
+
+
+def buckling_recommendation(results, ultimate_Dduct, shear_Dduct=None):
+    """Report lines for the recommended buckling onset and governing mechanism.
+
+    `results` is a list of dicts, one per model that produced an onset, with
+    keys 'name', 'Dduct', 'displ' and 'status' (one of the three constants
+    above). The recommended onset is the lowest among the models that are not
+    EXCLUDED: bar buckling is an onset, so the first mechanism to trigger
+    governs, and a model is set aside only where it is demonstrably outside
+    its domain - never merely because it extrapolates, since ignoring a lower
+    prediction on that ground would be the unconservative direction.
+
+    `shear_Dduct` is the displacement ductility at shear failure, or None when
+    no shear failure occurs within the analysed range.
+    """
+    lines = []
+    usable = [r for r in results if r['status'] != EXCLUDED]
+    best = min(usable, key=lambda r: r['displ']) if usable else None
+
+    # --- which mechanism reaches its limit first -----------------------------
+    candidates = [('ultimate deformation capacity', ultimate_Dduct)]
+    if shear_Dduct is not None:
+        candidates.append(('shear failure', shear_Dduct))
+    if best is not None:
+        candidates.append(('bar buckling', best['Dduct']))
+    governing, gov_duct = min(candidates, key=lambda c: c[1])
+    others = sorted((c for c in candidates if c[0] != governing), key=lambda c: c[1])
+
+    lines.append("Recommended bar buckling onset:")
+    lines.append("")
+
+    if not results:
+        lines.append("  No buckling model predicted an onset within the analysed range.")
+        lines.append("")
+    elif best is None:
+        lines.append("  Every model that produced an onset is outside its domain of validity.")
+        lines.append("  No recommended value; see the applicability notes below.")
+        lines.append("")
+    else:
+        body = [f"mu_D = {best['Dduct']:.2f}      Displacement = {best['displ']:.5f} m",
+                best['name']]
+        # A boxed value is what a hurried reader takes away, so it has to carry
+        # the caveat itself when bar buckling is not what limits the member.
+        if governing != 'bar buckling':
+            body.append(f"NOT GOVERNING - {governing} occurs first at mu_D {gov_duct:.2f}")
+        width = 70
+        lines.append("  +" + "-" * width + "+")
+        for text in body:
+            lines.append("  |  " + text.ljust(width - 2) + "|")
+        lines.append("  +" + "-" * width + "+")
+        lines.append("")
+
+    if results:
+        lines.append(f"  {'Model':<34}{'mu_D':>8}{'Displ [m]':>13}   Status")
+        for r in results:
+            marker = ' <<<' if best is not None and r is best else ''
+            lines.append(f"  {r['name']:<34}{r['Dduct']:>8.2f}{r['displ']:>13.5f}   "
+                         f"{r['status']}{marker}")
+        lines.append("")
+        lines.append("  Status   applicable   - the model has a calibration for this section geometry")
+        lines.append("           extrapolated - applied outside its calibration geometry or detailing")
+        lines.append("           excluded     - demonstrably outside its domain; see the notes below")
+        lines.append("")
+        lines.append("  Selection rule: the lowest onset among the models that are not excluded.")
+        lines.append("  This ranking is supplied by CUMBIA_PY as a decision aid; the source")
+        lines.append("  publications do not rank the models against each other.")
+        lines.append("")
+
+    lines.append(f"  Governing mechanism: {governing} at mu_D {gov_duct:.2f}"
+                 + ("," if others else "."))
+    if others:
+        lines.append(f"    ahead of {others[0][0]} at mu_D {others[0][1]:.2f}.")
+    if shear_Dduct is None:
+        lines.append("  No shear failure occurs within the analysed range.")
+    lines.append("")
+
+    return lines

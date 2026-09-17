@@ -372,3 +372,85 @@ be fed the same `rho_s`, and the growth strain must match the published
 interpolation. Each was checked to fail when its fix is reverted. The existing
 golden files record no buckling output, so none needed regenerating; all 152
 previous tests still pass unchanged.
+
+---
+
+## 9. Recommended buckling onset and governing mechanism (0.3.4)
+
+The report listed the four buckling models side by side and left the reader to
+decide which one to believe. With the models spread over a factor of four on a
+poorly detailed section — and the lowest of them being the one furthest outside
+its domain — that is a decision the report was well placed to help with.
+
+Neither the *CUMBIA Theory and User Guide* nor the source publications rank the
+models against each other, so the rule below is CUMBIA_PY's own. It is printed
+in full in the report, as a decision aid to be overridden where judgement
+requires, not as an authority.
+
+### 9.1 Classification
+
+Each model that produces an onset is labelled by how far it sits from its
+calibration:
+
+* `applicable` — the model has a calibration for this section geometry;
+* `extrapolated` — applied outside its calibration geometry or detailing;
+* `excluded` — demonstrably outside its domain.
+
+Berry-Eberhard is the only model with a native rectangular calibration (62
+rectangular-reinforced columns alongside 42 spiral-reinforced ones), so on a
+rectangular section Moyer-Kowalsky and both Goodnight models are
+`extrapolated`. On a circular section all three are native. Moyer-Kowalsky is
+`excluded` wherever `s/db > 8`, the one applicability gate that can be checked
+from the inputs.
+
+### 9.2 Selection
+
+The recommended onset is the **lowest among the models that are not
+excluded**. Bar buckling is an onset, so the first mechanism to trigger
+governs; a model is set aside only where it is demonstrably outside its
+domain, never merely because it extrapolates, since discarding a lower
+prediction on that ground is the unconservative direction.
+
+Where every model is excluded, or none produced an onset, the report says so
+and gives no recommended value.
+
+### 9.3 Governing mechanism
+
+A recommended buckling onset means nothing on a member that fails in shear
+first. The block now compares the recommended onset against the shear failure
+displacement (where one occurs) and the ultimate deformation capacity, and
+names which of the three limits the member. When bar buckling is not the
+governing mechanism the caveat is printed **inside** the highlighted box, not
+only below it: a boxed value is what a hurried reader takes away.
+
+### 9.4 Presentation
+
+Emphasis is plain ASCII — a boxed recommendation and a `<<<` marker on the
+governing row — so it survives the PDF, the Excel export and copy-paste
+without touching the figures or the page renderer. The plots are unchanged.
+
+The logic lives in `material_models.buckling_recommendation()` so the rule
+cannot drift between the rectangular and circular reports.
+
+### 9.5 On the reported example
+
+```
+  +----------------------------------------------------------------------+
+  |  mu_D = 4.19      Displacement = 0.18451 m                           |
+  |  Goodnight et al. (drift-based)                                      |
+  +----------------------------------------------------------------------+
+
+  Model                                 mu_D    Displ [m]   Status
+  Moyer - Kowalsky                      1.20      0.05273   excluded
+  Berry - Eberhard                      4.82      0.21239   applicable
+  Goodnight et al. (strain-based)       4.70      0.20706   extrapolated
+  Goodnight et al. (drift-based)        4.19      0.18451   extrapolated <<<
+```
+
+### 9.6 Tests
+
+Eight tests in `tests/test_buckling_models.py` cover the rule: that an
+excluded model never wins even when it is the lowest, that an extrapolated one
+can, the two degenerate cases, and that a squat member really does report
+shear as governing with the caveat inside the box. Reverting the rule to
+"lowest among `applicable` only" makes two of them fail.

@@ -818,6 +818,27 @@ if 0 < buckldisplGN_drift <= displ[-1]:
     bucklcurvGN_drift = np.interp(buckldisplGN_drift, displ, curv)
     bucklDdGN_drift = np.interp(buckldisplGN_drift, displ, Dduct)
     bucklmomGN_drift = np.interp(buckldisplGN_drift, displ, mom)
+
+# Collect what each model produced. All three were calibrated on circular
+# columns, so on this section none of them extrapolates the geometry;
+# Moyer-Kowalsky is set aside only when the tie spacing leaves its range.
+buckling_results = []
+if bucritMK == 1:
+    buckling_results.append({
+        'name': 'Moyer - Kowalsky', 'Dduct': bucklDd, 'displ': buckldispl,
+        'status': mm.EXCLUDED if s_over_db > 8 else mm.APPLICABLE})
+if bucritBE == 1:
+    buckling_results.append({
+        'name': 'Berry - Eberhard', 'Dduct': bucklDdBE, 'displ': buckldisplBE,
+        'status': mm.APPLICABLE})
+if bucritGN_strain == 1:
+    buckling_results.append({
+        'name': 'Goodnight et al. (strain-based)', 'Dduct': bucklDdGN_strain,
+        'displ': buckldisplGN_strain, 'status': mm.APPLICABLE})
+if bucritGN_drift == 1:
+    buckling_results.append({
+        'name': 'Goodnight et al. (drift-based)', 'Dduct': bucklDdGN_drift,
+        'displ': buckldisplGN_drift, 'status': mm.APPLICABLE})
     
 # Shear Capacity
 dy1f = np.interp(fycurv, curv, displf)
@@ -1345,6 +1366,11 @@ if bucritGN_drift == 1:
     add_line(f"Force for Buckling:   {bucklforceGN_drift:.2f} kN")
     add_line(f"Moment for Buckling:   {bucklmomGN_drift:.2f} kN-m")
     add_line("")
+
+for line in mm.buckling_recommendation(
+        buckling_results, ultimate_Dduct=float(Dduct[-1]),
+        shear_Dduct=(float(failduct) if criteria != 1 else None)):
+    add_line(line)
 
 if buckling_notes:
     add_line("Buckling model applicability notes:")

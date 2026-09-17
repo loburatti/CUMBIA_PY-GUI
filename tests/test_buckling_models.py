@@ -14,6 +14,7 @@ These tests pin the invariants that caught the two defects fixed in 0.3.4:
 import numpy as np
 import pytest
 
+import material_models as mm
 from tests.conftest import run_engine
 
 
@@ -148,3 +149,97 @@ def test_applicability_notes_fire_on_wide_tie_spacing():
     notes = ' '.join(ns['buckling_notes'])
     assert 'Moyer-Kowalsky' in notes
     assert 'Goodnight' in notes
+
+
+# ------------------------------------------------- recommended onset ----
+# The selection rule is CUMBIA_PY's own, so it is pinned explicitly: a model
+# is set aside only when demonstrably outside its domain, and among the rest
+# the lowest onset wins. Dropping a lower prediction merely because it
+# extrapolates would be the unconservative direction.
+def _rec(results, **kw):
+    kw.setdefault('ultimate_Dduct', 9.0)
+    return '\n'.join(mm.buckling_recommendation(results, **kw))
+
+
+def _model(name, duct, status):
+    return {'name': name, 'Dduct': duct, 'displ': duct / 100.0, 'status': status}
+
+
+def test_recommendation_takes_the_lowest_onset_that_is_not_excluded():
+    text = _rec([_model('Berry - Eberhard', 4.82, mm.APPLICABLE),
+                 _model('Goodnight et al. (drift-based)', 4.19, mm.EXTRAPOLATED)])
+    assert 'mu_D = 4.19' in text
+    assert 'Goodnight et al. (drift-based)' in text.split('+---')[1]
+
+
+def test_an_excluded_model_never_wins_even_when_it_is_the_lowest():
+    text = _rec([_model('Moyer - Kowalsky', 1.20, mm.EXCLUDED),
+                 _model('Berry - Eberhard', 4.82, mm.APPLICABLE)])
+    boxed = text.split('+---')[1]
+    assert 'mu_D = 4.82' in boxed
+    assert 'Moyer - Kowalsky' not in boxed
+    assert 'Moyer - Kowalsky' in text          # still listed, with its status
+    assert 'excluded' in text
+
+
+def test_no_recommendation_when_every_model_is_excluded():
+    text = _rec([_model('Moyer - Kowalsky', 1.20, mm.EXCLUDED)])
+    assert 'No recommended value' in text
+    assert '+---' not in text
+
+
+def test_no_recommendation_when_no_model_produced_an_onset():
+    text = _rec([])
+    assert 'No buckling model predicted an onset' in text
+    assert 'ultimate deformation capacity at mu_D 9.00' in text
+
+
+def test_the_box_carries_the_caveat_when_buckling_does_not_govern():
+    """A boxed value is what a hurried reader takes away."""
+    text = _rec([_model('Berry - Eberhard', 4.82, mm.APPLICABLE)],
+                ultimate_Dduct=5.4, shear_Dduct=2.1)
+    boxed = text.split('+---')[1]
+    assert 'NOT GOVERNING' in boxed
+    assert 'shear failure occurs first at mu_D 2.10' in boxed
+    assert 'Governing mechanism: shear failure at mu_D 2.10' in text
+
+
+def test_the_box_is_clean_when_buckling_does_govern():
+    text = _rec([_model('Berry - Eberhard', 4.82, mm.APPLICABLE)], ultimate_Dduct=9.0)
+    assert 'NOT GOVERNING' not in text
+    assert 'Governing mechanism: bar buckling at mu_D 4.82' in text
+
+
+# ------------------------------------------------------- engine wiring ----
+def test_rectangular_sets_aside_moyer_kowalsky_outside_its_range():
+    """The reported case: s/db = 12.5 excludes M&K, so the lowest of the
+    remaining models is recommended instead of M&K's degenerate onset."""
+    ns = run_engine('rectangular', {
+        'name': 'bk_rec_wide', 'interaction': 'n',
+        'bending': 'double', 'L': 4000.0, 'B': 350.0, 'H': 350.0,
+        's': 200.0, 'dv': 8.0, 'ncx': 3, 'ncy': 3,
+        'n_top_bot': 3, 'n_side': 1, 'Dbl_auto': 16.0, 'P_kN': 500.0})
+
+    by_name = {r['name']: r for r in ns['buckling_results']}
+    assert by_name['Moyer - Kowalsky']['status'] == mm.EXCLUDED
+    assert by_name['Berry - Eberhard']['status'] == mm.APPLICABLE
+    assert by_name['Goodnight et al. (drift-based)']['status'] == mm.EXTRAPOLATED
+
+    usable = [r for r in ns['buckling_results'] if r['status'] != mm.EXCLUDED]
+    best = min(usable, key=lambda r: r['displ'])
+    assert best['name'] == 'Goodnight et al. (drift-based)'
+    assert best['Dduct'] < by_name['Berry - Eberhard']['Dduct']
+
+
+def test_report_names_shear_as_the_governing_mechanism_when_it_is():
+    """A squat member fails in shear well before any bar buckles."""
+    ns = run_engine('rectangular', {
+        'name': 'bk_rec_squat', 'interaction': 'n',
+        'bending': 'double', 'L': 900.0, 'B': 350.0, 'H': 350.0,
+        's': 200.0, 'dv': 8.0, 'ncx': 2, 'ncy': 2,
+        'n_top_bot': 3, 'n_side': 1, 'Dbl_auto': 16.0, 'P_kN': 500.0})
+
+    assert ns['criteria'] != 1, 'this section is supposed to fail in shear'
+    report = '\n'.join(row[0] for row in ns['report_data'] if len(row) == 1)
+    assert 'Governing mechanism: shear failure' in report
+    assert 'NOT GOVERNING' in report

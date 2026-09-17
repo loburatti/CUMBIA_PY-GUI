@@ -59,6 +59,7 @@ All four models were verified against the original MATLAB release and the *CUMBI
 - **Goodnight et al., both models:** fed `rho_s/2` instead of the volumetric transverse ratio. A single `TransvSteelRatioVolumetric` now feeds the Goodnight and Berry-Eberhard formulas alike. Circular sections were already correct.
 - **Moyer & Kowalsky:** the growth strain now vanishes at curvature ductility 1 as the guide specifies, instead of following a line through the origin. The critical strain formula uses the extreme fibre bar diameter (`dbl_extreme`).
 - **Applicability notes:** the report now flags a tie spacing outside the Moyer-Kowalsky calibration range, an allowable strain that turns negative, and the extrapolation involved in applying the Goodnight models to a rectangular core.
+- **Recommended onset and governing mechanism:** each model is classified as applicable, extrapolated or excluded against its own calibration domain, and the report highlights the lowest onset among those not excluded — then states whether bar buckling, shear failure or the ultimate deformation capacity actually governs the member. The selection rule is CUMBIA_PY's own and is printed in full; the source publications do not rank the models against each other. Figures are unchanged.
 
 ### 3. Theoretical Enhancements (from v0.2)
 - **Modified Plastic-Hinge Method:** Goodnight et al. (2016) method with decoupled flexure and strain penetration components

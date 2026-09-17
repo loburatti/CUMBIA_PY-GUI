@@ -869,6 +869,29 @@ if 0 < buckldisplGN_drift <= displ[-1]:
     bucklDdGN_drift = np.interp(buckldisplGN_drift, displ, Dduct)
     bucklmomGN_drift = np.interp(buckldisplGN_drift, displ, mom)
 
+# Collect what each model produced, with how far it is from its calibration.
+# Berry-Eberhard is the only model with a native rectangular calibration
+# (62 rectangular-reinforced columns); Moyer-Kowalsky and both Goodnight
+# models were calibrated on circular columns, so on this section they
+# extrapolate the geometry.
+buckling_results = []
+if bucritMK == 1:
+    buckling_results.append({
+        'name': 'Moyer - Kowalsky', 'Dduct': bucklDd, 'displ': buckldispl,
+        'status': mm.EXCLUDED if s_over_db > 8 else mm.EXTRAPOLATED})
+if bucritBE == 1:
+    buckling_results.append({
+        'name': 'Berry - Eberhard', 'Dduct': bucklDdBE, 'displ': buckldisplBE,
+        'status': mm.APPLICABLE})
+if bucritGN_strain == 1:
+    buckling_results.append({
+        'name': 'Goodnight et al. (strain-based)', 'Dduct': bucklDdGN_strain,
+        'displ': buckldisplGN_strain, 'status': mm.EXTRAPOLATED})
+if bucritGN_drift == 1:
+    buckling_results.append({
+        'name': 'Goodnight et al. (drift-based)', 'Dduct': bucklDdGN_drift,
+        'displ': buckldisplGN_drift, 'status': mm.EXTRAPOLATED})
+
 if bucritGN_strain == 1 or bucritGN_drift == 1:
     buckling_notes.append(
         "Goodnight, Kowalsky & Nau: both models were calibrated on circular, spiral-reinforced "
@@ -1377,6 +1400,11 @@ if bucritGN_drift == 1:
     add_line(f"Force for Buckling:   {bucklforceGN_drift:.2f} kN")
     add_line(f"Moment for Buckling:   {bucklmomGN_drift:.2f} kN-m")
     add_line("")
+
+for line in mm.buckling_recommendation(
+        buckling_results, ultimate_Dduct=float(Dduct[-1]),
+        shear_Dduct=(float(failduct) if criteria != 1 else None)):
+    add_line(line)
 
 if buckling_notes:
     add_line("Buckling model applicability notes:")
