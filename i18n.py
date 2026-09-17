@@ -172,6 +172,13 @@ _STRINGS = {
         'wi_label':           'wi',
         'wi_mander_label':    'wi Mander',
 
+        # Consistency checks
+        'consistency_checks': 'Consistency checks',
+        'checks_ok':          'No inconsistency found between the bar layout, the transverse reinforcement and the section geometry.',
+        'sev_error':          '[ERROR]',
+        'sev_warning':        '[WARNING]',
+        'sev_advice':         '[ADVICE]',
+        'msg_blocking_errors': 'This section cannot be analysed as it stands:',
         'wi_manual_label':    'wi (manual)',
         'theme_dark':         'Dark',
         'theme_light':        'Light',
@@ -294,6 +301,92 @@ _STRINGS = {
         'wi_label':           'wi',
         'wi_mander_label':    'wi Mander',
 
+        # Controlli di coerenza
+        'consistency_checks': 'Controlli di coerenza',
+        'checks_ok':          'Nessuna incoerenza tra disposizione delle barre, armatura trasversale e geometria della sezione.',
+        'sev_error':          '[ERRORE]',
+        'sev_warning':        '[AVVISO]',
+        'sev_advice':         '[CONSIGLIO]',
+        'msg_blocking_errors': 'Questa sezione non puo\' essere analizzata cosi\' com\'e\':',
+
+        # Testi dei controlli (le versioni inglesi stanno in section_checks.py)
+        'check_geometry_not_positive':
+            'Le dimensioni della sezione devono essere positive: {what} = {value:g}.',
+        'check_cover_eats_the_core':
+            'Il copriferro non lascia nucleo: clb = {clb:g} mm su una sezione {B:g} x {H:g} mm.',
+        'check_spacing_below_bar':
+            'Il passo delle staffe s = {s:g} mm non supera il diametro dv = {dv:g} mm: '
+            'la distanza libera tra staffe risulta {sp:g} mm.',
+        'check_no_reinforcement':
+            'Non e\' stato definito alcuno strato di armatura longitudinale.',
+        'check_empty_layer':
+            'Lo strato a profondita\' {depth:g} mm ha {n_bars:g} barre.',
+        'check_single_layer':
+            'Un solo strato di armatura non definisce un perimetro di sezione: mancano il lembo '
+            'inferiore e i lati su cui il confinamento agisce. Servono almeno due strati.',
+        'check_bar_outside_cover':
+            'Lo strato a profondita\' {depth:g} mm con barre da {dbl:g} mm cade fuori dal copriferro: '
+            'il baricentro deve stare tra {low:.1f} e {high:.1f} mm.',
+        'check_bar_x_outside_cover':
+            'Una barra dello strato a profondita\' {depth:g} mm e\' a x = {x:g} mm, fuori '
+            'dall\'intervallo {low:.1f} - {high:.1f} mm consentito dal copriferro.',
+        'check_bars_overlap':
+            'Le barre si sovrappongono nello strato a profondita\' {depth:g} mm: {n_bars:g} barre '
+            'da {dbl:g} mm lasciano una distanza libera di {spacing:.1f} mm.',
+        'check_ke_not_positive':
+            'Il confinamento non e\' definito: sum(wi^2) = {sum_wi2:.0f} mm^2 raggiunge il '
+            '{share:.0%} di 6*bc*dc, quindi il fattore di efficacia di Mander risulta nullo o '
+            'negativo. Aggiungi barre trattenute, o verifica i wi inseriti a mano.',
+        'check_legs_without_bars_ncy':
+            'Sono stati dichiarati ncy = {declared} bracci paralleli ad H, ma la disposizione delle '
+            'barre ne puo\' trattenere {placed}: una legatura e\' rettilinea, quindi le serve una '
+            'barra alla stessa ascissa sul lembo superiore e su quello inferiore. L\'area di '
+            'armatura trasversale conta comunque {declared} bracci; il confinamento ne conta {placed}.',
+        'check_legs_without_bars_ncx':
+            'Sono stati dichiarati ncx = {declared} bracci paralleli a B, ma la disposizione delle '
+            'barre ne puo\' trattenere {placed}: un braccio che attraversa la larghezza ha bisogno '
+            'di una barra sul lato sinistro e su quello destro alla stessa profondita\'. L\'area di '
+            'armatura trasversale conta comunque {declared} bracci; il confinamento ne conta {placed}.',
+        'check_bars_too_close':
+            'Lo strato a profondita\' {depth:g} mm lascia {spacing:.1f} mm tra le barre, sotto i '
+            '{minimum:.1f} mm normalmente richiesti per il getto.',
+        'check_spacing_over_six_db':
+            'Il passo delle staffe s = {s:g} mm e\' {ratio:.1f} volte il diametro della barra di '
+            'lembo {dbl:g} mm, oltre il dettaglio antinstabilita\' normalmente richiesto in zona '
+            'critica (s <= {limit:g} db). I modelli di instabilita\' vengono comunque eseguiti; '
+            'il report indica quanto ciascuno si discosta dalla propria calibrazione.',
+        'check_confinement_poor':
+            'Le distanze tra barre trattenute assorbono il {share:.0%} di quanto il fattore di '
+            'efficacia di Mander consente. Legature sulle barre libere ne recupererebbero gran parte.',
+        'check_duplicate_depths':
+            'Due strati di armatura condividono la profondita\' {depth:g} mm. Vengono analizzati '
+            'come strati distinti; probabilmente si intendeva un unico strato con il numero '
+            'complessivo di barre.',
+        'check_layer_off_the_left_face':
+            'Lo strato a profondita\' {depth:g} mm non ha barre contro il lato sinistro, quindi '
+            'l\'armatura trasversale non puo\' trattenerlo li\'. Le sue barre sono armatura '
+            'interna per il modello di confinamento.',
+        'check_layer_off_the_right_face':
+            'Lo strato a profondita\' {depth:g} mm non ha barre contro il lato destro, quindi '
+            'l\'armatura trasversale non puo\' trattenerlo li\'. Le sue barre sono armatura '
+            'interna per il modello di confinamento.',
+        'check_manual_wi_count':
+            'Sono state inserite a mano {given} distanze libere; la disposizione delle barre ne '
+            'produce {expected}. L\'analisi usa i valori inseriti.',
+        'check_manual_wi_differs':
+            'Le distanze inserite a mano danno sum(wi^2) = {given:.0f} mm^2 contro {expected:.0f} '
+            'mm^2 della disposizione disegnata. L\'analisi usa i valori inseriti.',
+        'check_legs_could_be_added_ncy':
+            'I lembi superiore e inferiore portano {available} barre che un braccio potrebbe '
+            'trattenere, a fronte di ncy = {declared} bracci dichiarati. Legature sulle barre '
+            'libere migliorerebbero il confinamento senza cambiare la sezione.',
+        'check_legs_could_be_added_ncx':
+            'I lati portano {available} barre che un braccio potrebbe trattenere, a fronte di '
+            'ncx = {declared} bracci dichiarati. Legature sulle barre libere migliorerebbero il '
+            'confinamento senza cambiare la sezione.',
+        'check_steel_ratio':
+            'Il rapporto di armatura longitudinale e\' {ratio:.2%} dell\'area lorda, fuori '
+            'dall\'intervallo {low:.0%} - {high:.0%} in cui i pilastri sono normalmente armati.',
         'wi_manual_label':    'wi (manuale)',
         'theme_dark':         'Scuro',
         'theme_light':        'Chiaro',

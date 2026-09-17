@@ -17,6 +17,7 @@ import numpy as np
 from i18n import T, get_tips, get_lang, set_lang, save_preference
 import material_models as mm
 import section_geometry as sg
+import section_checks as sc
 
 # PyInstaller: analysis scripts import these at runtime via exec(),
 # so we import them here to ensure they are bundled.
@@ -222,6 +223,33 @@ def scaled_font_size(widget, size):
     if not isinstance(factor, (int, float)) or factor <= 0:
         factor = 1.0
     return max(int(round(size * factor)), size)
+
+
+# Consistency findings, by severity: (dark mode, light mode)
+SEVERITY_COLOURS = {
+    sc.ERROR:   ('#ff6b6b', '#c00000'),
+    sc.WARNING: ('#e8a838', '#b06a00'),
+    sc.ADVICE:  ('#7fb3ff', '#1d5fb4'),
+}
+SEVERITY_LABELS = {sc.ERROR: 'sev_error', sc.WARNING: 'sev_warning',
+                   sc.ADVICE: 'sev_advice'}
+
+
+def finding_text(finding):
+    """A finding in the interface language.
+
+    section_checks owns the English wording, so it is the one copy the report
+    prints and the tests read; i18n carries the translations under
+    check_<code> and falls back to the English template when one is missing.
+    """
+    key = f'check_{finding.code}'
+    template = T(key)
+    if template == key:
+        template = sc.TEMPLATES[finding.code]
+    try:
+        return template.format(**finding.params)
+    except (KeyError, IndexError, ValueError):
+        return sc.TEMPLATES[finding.code].format(**finding.params)
 
 
 def parse_bar_x(text):
@@ -753,6 +781,11 @@ class CumbiaApp(ctk.CTk):
         self._vars_cir = {}
         self._vars_rect = {}
         self._running = False
+        # the preview refreshes while the tab is still being built, so the
+        # consistency panel has to exist as "not there yet" from the start
+        self._checks_panel = None
+        self._check_rows = []
+        self._findings = []
 
         self._build_ui()
 
@@ -819,6 +852,9 @@ class CumbiaApp(ctk.CTk):
             text=T('theme_dark') if mode == 'dark' else T('theme_light'))
         self._cir_canvas.request_redraw()
         self._rect_canvas.request_redraw()
+        # the finding colours are set per label, so they follow the theme only
+        # if the panel is rebuilt
+        self._refresh_rect_canvas()
 
     # ---- language toggle -----------------------------------------------------
     def _toggle_lang(self):
@@ -1008,6 +1044,13 @@ class CumbiaApp(ctk.CTk):
                                         font=('Consolas', 13))
         self._wi_display.pack(anchor='w', padx=6, pady=2)
 
+        # consistency checks, under both columns
+        editor.rowconfigure(1, weight=1)
+        self._checks_panel = ctk.CTkScrollableFrame(
+            editor, label_text=T('consistency_checks'), height=130)
+        self._checks_panel.grid(row=1, column=0, columnspan=2,
+                                sticky='nsew', padx=4, pady=(2, 4))
+
         self._refresh_rect_canvas()
 
     # ---- toggle auto/custom MLR -------------------------------------------
@@ -1090,9 +1133,9 @@ class CumbiaApp(ctk.CTk):
     def _current_rect_section(self):
         """Every input of the rectangular tab, plus the restraint layout.
 
-        Read in one place so that the preview, the wi read-out and the
-        parameter file all describe the same section instead of each
-        re-reading the widgets its own way.
+        Read in one place so that the preview, the wi read-out, the
+        consistency checks and the parameter file all describe the same
+        section instead of each re-reading the widgets its own way.
         """
         def number(raw, default):
             try:
@@ -1157,9 +1200,48 @@ class CumbiaApp(ctk.CTk):
             self._wi_display.configure(
                 text=f'{T(label)} = [{", ".join(f"{v:.0f}" for v in sec["wi"])}]')
 
+            # the preview first: a problem in the checks must not leave the
+            # section undrawn
             self._rect_canvas.update_params(p)
+            self._refresh_checks(sec)
         except Exception:
             pass
+
+    # ---- consistency checks -------------------------------------------------
+    def _refresh_checks(self, sec):
+        """Re-run the checks on the section as typed and list what they say."""
+        self._findings = sc.check_rectangular(
+            sec['B'], sec['H'], sec['clb'], sec['dv'], sec['s'],
+            sec['ncx'], sec['ncy'], sec['mlr'], bar_x=sec['bar_x'],
+            wi=sec['wi'], wi_auto=sec['wi_auto'])
+
+        panel = getattr(self, '_checks_panel', None)
+        if panel is None:
+            return
+        for row in self._check_rows:
+            row.destroy()
+        self._check_rows = []
+
+        if not self._findings:
+            row = ctk.CTkLabel(panel, text=T('checks_ok'), anchor='w',
+                               justify='left', wraplength=560)
+            row.pack(fill='x', padx=6, pady=2)
+            self._check_rows.append(row)
+            return
+
+        dark = ctk.get_appearance_mode() == 'Dark'
+        for finding in self._findings:
+            colour = SEVERITY_COLOURS[finding.severity][0 if dark else 1]
+            row = ctk.CTkLabel(
+                panel, anchor='w', justify='left', wraplength=560,
+                text=f'{T(SEVERITY_LABELS[finding.severity])}  {finding_text(finding)}',
+                text_color=colour)
+            row.pack(fill='x', padx=6, pady=2)
+            self._check_rows.append(row)
+
+    def _blocking_findings(self):
+        """The findings that must be cleared before an analysis can run."""
+        return [f for f in getattr(self, '_findings', []) if f.severity == sc.ERROR]
 
     # ---- build generic parameter form -------------------------------------
     def _build_param_form(self, parent, schema, var_dict):
@@ -1381,6 +1463,15 @@ class CumbiaApp(ctk.CTk):
         except Exception as e:
             messagebox.showerror(T('param_error'), f'{T("msg_param_error")}{e}')
             return
+
+        if section_type == 'rectangular':
+            blocking = self._blocking_findings()
+            if blocking:
+                messagebox.showerror(
+                    T('consistency_checks'),
+                    T('msg_blocking_errors') + '\n\n'
+                    + '\n\n'.join(f'- {finding_text(f)}' for f in blocking))
+                return
 
         # "Save as" dialog: ask subfolder name
         dialog = ctk.CTkInputDialog(

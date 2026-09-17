@@ -522,3 +522,41 @@ and the longer distance the confinement has to span.
 `wi_mander`), `CUMBIA_RECT.py`, `main.py`, `i18n.py`, `CUMBIA_PY.spec`,
 `tests/test_section_geometry.py` (new), `tests/test_wi_consistency.py`,
 `tests/test_gui_and_i18n.py`, `tests/golden/rectangular_crossties.json`.
+
+---
+
+## 11. Section consistency checks (0.3.5)
+
+**Problem.** The engine runs on almost anything: it reads numbers, not a
+section. Bars outside the cover, bars on top of each other, a hoop spacing
+smaller than the hoop itself, legs that hook nothing — all of it produced a
+report with no hint that the section analysed was not the one intended.
+
+**Fix.** `section_checks.py` (new) reads the inputs as a detailer would and
+returns findings at three severities:
+
+- **ERROR** — the section cannot exist, or the confinement model cannot
+  describe it: non-positive dimensions, a cover that leaves no core, `s <= dv`,
+  bars outside the cover, overlapping bars, a single reinforcement layer, and
+  `sum(wi^2)` reaching `6*bc*dc`, where Mander's effectiveness factor comes out
+  at or below zero. The GUI refuses to run these and says which ones.
+- **WARNING** — the section can be built, but it is not the one the numbers
+  describe: legs the bar layout cannot hold, bar spacing too tight to place
+  concrete through, `s > 6*db`, a layer with no bar on a face a leg would have
+  to hook, confinement already eaten by the gaps, wi entered by hand that
+  disagrees with the layout drawn.
+- **ADVICE** — nothing is wrong: crossties the layout would allow, a steel
+  ratio outside the range columns are usually detailed in.
+
+Nothing is corrected automatically. A check reports, the engineer decides, and
+the analysis runs on exactly what was entered — in particular `ncx` and `ncy`
+keep the value typed, because they state the transverse steel area.
+
+The findings appear in a panel under the section editor, live as the inputs
+change, and in the report under *Section consistency checks*, so a run from a
+script carries them too. `section_checks.py` owns the English wording, which
+is the copy the report prints; `i18n.py` carries the Italian.
+
+**Files:** `section_checks.py` (new), `CUMBIA_RECT.py`, `main.py`, `i18n.py`,
+`CUMBIA_PY.spec`, `tests/test_section_checks.py` (new),
+`tests/test_gui_and_i18n.py`.

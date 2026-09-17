@@ -28,10 +28,32 @@ def _string_tables():
 
 
 def test_english_and_italian_define_the_same_keys():
+    """Every interface string exists in both languages.
+
+    The check_* keys are the one exception: section_checks.py owns the English
+    wording, so that the report and the panel print the same sentence, and
+    i18n carries only the translation. test_no_check_key_is_an_orphan covers
+    that side.
+    """
     strings = _string_tables()['_STRINGS']
-    en, it = set(strings['en']), set(strings['it'])
+    en = {k for k in strings['en'] if not k.startswith('check_')}
+    it = {k for k in strings['it'] if not k.startswith('check_')}
     assert en - it == set(), f'missing Italian translations: {sorted(en - it)}'
     assert it - en == set(), f'missing English translations: {sorted(it - en)}'
+
+
+def test_no_check_key_is_an_orphan():
+    """An Italian check_* string with no finding behind it is dead weight,
+    and an English template with no translation shows up untranslated."""
+    import section_checks as sc
+
+    strings = _string_tables()['_STRINGS']
+    translated = {k[len('check_'):] for k in strings['it'] if k.startswith('check_')}
+    assert translated == set(sc.TEMPLATES), (
+        f'only in i18n: {sorted(translated - set(sc.TEMPLATES))}; '
+        f'only in section_checks: {sorted(set(sc.TEMPLATES) - translated)}')
+    assert not [k for k in strings['en'] if k.startswith('check_')], (
+        'the English wording belongs in section_checks.py, not in i18n')
 
 
 def test_tooltips_cover_both_languages():
@@ -468,3 +490,62 @@ def test_preview_labels_the_gaps_it_draws(gui):
 def test_preview_survives_an_empty_or_broken_layer_table(gui):
     for mlr in ([], [[48.0, 0, 16.0]], [[48.0, 2, 16.0]]):
         _drawn(gui, _rect_params(gui, mlr, 3, 3))
+
+
+# ------------------------------------------------------ consistency panel ----
+def test_a_finding_reads_in_the_interface_language(gui):
+    """finding_text prefers the translation and falls back to the English
+    template section_checks owns, without ever raising on a missing key."""
+    import i18n
+    import section_checks as sc
+
+    finding = sc.Finding(sc.WARNING, 'legs_without_bars_ncy', declared=3, placed=2)
+    try:
+        i18n.set_lang('it')
+        italian = gui.finding_text(finding)
+        i18n.set_lang('en')
+        english = gui.finding_text(finding)
+    finally:
+        i18n.set_lang('en')
+
+    assert '3' in italian and '2' in italian
+    assert english == sc.TEMPLATES['legs_without_bars_ncy'].format(declared=3, placed=2)
+    assert italian != english
+
+
+def test_an_untranslated_finding_still_reads(gui, monkeypatch):
+    import section_checks as sc
+
+    monkeypatch.setitem(sc.TEMPLATES, 'made_up_code', 'plain {value:g}')
+    assert gui.finding_text(sc.Finding(sc.ERROR, 'made_up_code', value=7)) == 'plain 7'
+
+
+def test_every_severity_has_a_colour_and_a_label(gui):
+    import section_checks as sc
+
+    for severity in (sc.ERROR, sc.WARNING, sc.ADVICE):
+        assert severity in gui.SEVERITY_COLOURS
+        assert gui.T(gui.SEVERITY_LABELS[severity]) != gui.SEVERITY_LABELS[severity]
+
+
+def test_only_errors_block_a_run(gui):
+    import section_checks as sc
+
+    app = gui.CumbiaApp.__new__(gui.CumbiaApp)
+    app._findings = [sc.Finding(sc.WARNING, 'legs_without_bars_ncy', declared=3, placed=2),
+                     sc.Finding(sc.ADVICE, 'legs_could_be_added_ncx', available=4, declared=2)]
+    assert gui.CumbiaApp._blocking_findings(app) == []
+
+    app._findings.append(sc.Finding(sc.ERROR, 'single_layer'))
+    assert [f.code for f in gui.CumbiaApp._blocking_findings(app)] == ['single_layer']
+
+
+def test_the_checks_run_even_before_the_panel_exists(gui):
+    """_refresh_rect_canvas fires while the tab is still being built."""
+    app = gui.CumbiaApp.__new__(gui.CumbiaApp)
+    app._checks_panel = None
+    sec = {'B': 300.0, 'H': 400.0, 'clb': 40.0, 'dv': 9.5, 's': 120.0,
+           'ncx': 2, 'ncy': 2, 'wi_auto': True, 'bar_x': None,
+           'mlr': [[52.7, 4, 25.4], [347.3, 4, 25.4]], 'wi': None}
+    gui.CumbiaApp._refresh_checks(app, sec)
+    assert isinstance(app._findings, list)
