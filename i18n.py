@@ -123,6 +123,8 @@ _STRINGS = {
         'mlr_depth':          'Depth [mm]',
         'mlr_nbars':          'N. bars',
         'mlr_diam':           'Diam [mm]',
+        'mlr_x':              'x positions [mm]',
+        'mlr_x_hint':         'optional, e.g. 50; 175; 300',
 
         # Transverse reinforcement
         'transverse_reinf':   'Transverse Reinforcement',
@@ -169,13 +171,14 @@ _STRINGS = {
         'msg_restart':        'Please restart the application\nfor the language change to take effect.',
         'wi_label':           'wi',
         'wi_mander_label':    'wi Mander',
+
         'wi_manual_label':    'wi (manual)',
         'theme_dark':         'Dark',
         'theme_light':        'Light',
         'about':              'About',
         'auto':               'Auto',
         'app_subtitle':       'Analysis of Reinforced Concrete Members',
-        'about_version':      'Version 0.3.4',
+        'about_version':      'Version 0.3.5',
         'about_desc':         'Moment-Curvature, Force-Displacement\nand Interaction Analysis',
         'about_engine':       'Original analysis engine:',
         'about_gui':          'GUI, enhancements, and distribution:',
@@ -242,6 +245,8 @@ _STRINGS = {
         'mlr_depth':          'Prof. [mm]',
         'mlr_nbars':          'N. barre',
         'mlr_diam':           'Diam [mm]',
+        'mlr_x':              'Posizioni x [mm]',
+        'mlr_x_hint':         'facoltativo, es. 50; 175; 300',
 
         # Transverse reinforcement
         'transverse_reinf':   'Armatura Trasversale',
@@ -288,13 +293,14 @@ _STRINGS = {
         'msg_restart':        "Riavvia l'applicazione\nper applicare il cambio di lingua.",
         'wi_label':           'wi',
         'wi_mander_label':    'wi Mander',
+
         'wi_manual_label':    'wi (manuale)',
         'theme_dark':         'Scuro',
         'theme_light':        'Chiaro',
         'about':              'Informazioni',
         'auto':               'Auto',
         'app_subtitle':       'Analisi di Elementi in Calcestruzzo Armato',
-        'about_version':      'Versione 0.3.4',
+        'about_version':      'Versione 0.3.5',
         'about_desc':         'Analisi Momento-Curvatura, Forza-Spostamento\ne di Interazione',
         'about_engine':       'Motore di calcolo originale:',
         'about_gui':          'GUI, migliorie e distribuzione:',
@@ -358,9 +364,10 @@ _TIPS_EN = {
     'n_side':        'Number of bars on each side\n(excluding corners)',
     'Dbl_auto':      'Diameter of all longitudinal bars\n(auto layout)',
     'dv':            'Transverse reinforcement diameter (stirrups)',
-    'ncx':           'Number of legs in X direction\n(parallel to B, confinement)',
-    'ncy':           'Number of legs in Y direction\n(parallel to H, shear resistance)',
-    'wi_input':      'Clear distances between peripheral longitudinal bars.\n[0] = automatic calculation',
+    'ncx':           'Number of legs parallel to B.\nThey restrain the side-face bars, and a leg can\nonly be placed where a layer has a bar on both sides.',
+    'ncy':           'Number of legs parallel to H.\nThey restrain the top and bottom bars, and a leg can\nonly be placed where both faces have a bar at the same x.',
+    'mlr_x':         'Optional bar positions across the width, e.g. 50; 175; 300.\nLeave empty to spread the bars evenly between the cover lines.\nPositions do not change the moment-curvature analysis:\nthey decide where a crosstie can hook, and so the wi.',
+    'wi_input':      'Clear distances between RESTRAINED longitudinal bars.\nAuto reads them off the bar layout; switch it off to enter\nyour own, comma separated.',
 }
 
 
@@ -418,9 +425,10 @@ _TIPS_IT = {
     'n_side':        'Numero di barre su ciascun lato\n(esclusi gli angoli)',
     'Dbl_auto':      'Diametro di tutte le barre longitudinali\n(layout automatico)',
     'dv':            "Diametro dell'armatura trasversale (staffe)",
-    'ncx':           'Numero di bracci in direzione X\n(paralleli a B, confinamento)',
-    'ncy':           'Numero di bracci in direzione Y\n(paralleli a H, resistenza a taglio)',
-    'wi_input':      'Distanze libere tra barre longitudinali periferiche.\n[0] = calcolo automatico',
+    'ncx':           'Numero di bracci paralleli a B.\nTrattengono le barre dei lati: un braccio puo\' essere posto\nsolo dove uno strato ha una barra su entrambi i lati.',
+    'ncy':           'Numero di bracci paralleli a H.\nTrattengono le barre di lembo superiore e inferiore: un braccio\npuo\' essere posto solo dove entrambi i lembi hanno una barra alla stessa x.',
+    'mlr_x':         'Posizioni delle barre lungo la larghezza, es. 50; 175; 300.\nLascia vuoto per distribuirle uniformemente tra i copriferri.\nLe posizioni non entrano nell\'analisi momento-curvatura:\ndecidono dove una legatura puo\' agganciare, e quindi i wi.',
+    'wi_input':      'Distanze libere tra le barre EFFETTIVAMENTE TRATTENUTE.\nIn automatico sono lette dalla disposizione delle barre;\ndisattiva per inserirle a mano, separate da virgola.',
 }
 
 

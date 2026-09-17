@@ -454,3 +454,71 @@ excluded model never wins even when it is the lowest, that an extrapolated one
 can, the two degenerate cases, and that a squat member really does report
 shear as governing with the caveat inside the box. Reverting the rule to
 "lowest among `applicable` only" makes two of them fail.
+
+---
+
+## 10. Confinement: wi read off the bar layout (0.3.5)
+
+**Problem.** Change 1 made the automatic wi depend on the number of transverse
+legs instead of on every peripheral bar, which was the right correction:
+Mander's effectiveness factor sums the clear distances between *restrained*
+bars. But it then assumed those restrained bars existed, evenly spread over
+the net core, whichever section had been typed in. The leg count and the bar
+layout never spoke to each other.
+
+A section with two bars on the top face and three on the bottom, analysed with
+`ncy = 3`, reported four gaps of 111 mm. Three of those bars are not there: a
+crosstie is a straight bar and can only hook where both faces it spans carry a
+bar at the same position. The real geometry has a single 238 mm gap on each of
+those faces, and a section confined less than the numbers claimed.
+
+**Fix.** `section_geometry.py` (new) builds the restraint geometry from the MLR
+itself: where each bar sits, which face it belongs to, and which of them a leg
+can actually hold. The perimeter hoop restrains the four corners; each
+intermediate leg is placed on the bar nearest its ideal position among those
+that can receive it, and a leg with nowhere to go is not placed. wi is then the
+clear distance between consecutive *restrained* bars along each face — a free
+bar is spanned, which is what arching between laterally supported bars means.
+
+`ncx` and `ncy` are left exactly as entered. They state the transverse steel
+area, and a leg that hooks nothing still contributes its area to `rho_x`,
+`rho_y` and to every buckling model. What the layout can hold is reported
+separately, in the preview and in the consistency checks, rather than one being
+silently corrected from the other.
+
+**Compatibility.** Where the declared legs can all be placed — uniformly spaced
+bars, matching counts on opposite faces, which is the common case — the new
+calculation reproduces the previous one exactly. `rectangular_default` in the
+golden files is unchanged to the last digit, and so are both circular cases.
+It departs from it only where the layout cannot host the legs that were
+declared, or where the bars are not uniformly spaced, and always towards a
+larger `sum(wi^2)`, that is towards less confinement:
+
+| golden case              | Mn      | mu_D    |
+|--------------------------|---------|---------|
+| `rectangular_default`    | 0.00%   | 0.00%   |
+| `rectangular_crossties`  | -0.20%  | -6.31%  |
+
+`rectangular_crossties` declares four legs per direction on a layout whose top
+and bottom faces share one intermediate bar position: the confinement it was
+credited with was not there.
+
+**Custom bar positions.** The MLR table takes an optional fourth column with
+the bar positions across the width, and `CUMBIA_RECT.py` an optional
+`custom_bar_x`, one entry per row, `None` where the bars are evenly spaced.
+Bar positions do not enter the moment-curvature analysis, which reads the layer
+depth, count and diameter only; they decide where a crosstie can hook, and so
+the wi. That is what makes a non-uniform layout — corner bars of one diameter,
+intermediate bars of another, a bar placed to receive a crosstie — describable
+without touching the mechanics.
+
+**Preview.** The legs are drawn where they are actually placed, on the bars
+they hook, instead of at a fraction of the core. A ring marks each restrained
+bar. Red arrows outside a face are the wi that enter ke; amber arrows inside a
+face appear only where a bar is free, so the drawing shows both the bar spacing
+and the longer distance the confinement has to span.
+
+**Files:** `section_geometry.py` (new), `material_models.py` (re-exports
+`wi_mander`), `CUMBIA_RECT.py`, `main.py`, `i18n.py`, `CUMBIA_PY.spec`,
+`tests/test_section_geometry.py` (new), `tests/test_wi_consistency.py`,
+`tests/test_gui_and_i18n.py`, `tests/golden/rectangular_crossties.json`.

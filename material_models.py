@@ -170,58 +170,10 @@ def manderunlw(Ec, nbl, Dbl, Dh, clb, s, fpc, fyh, eco, esm, espall, section, D,
 
     return ec, fcu
 
-def wi_mander(MLR, B, H, clb, ncx, ncy):
-    """Clear distances between RESTRAINED longitudinal bars, for Mander's ke.
-
-    Mander's confinement effectiveness factor sums wi**2 over the clear gaps
-    between bars that are actually held by a stirrup corner or a crosstie —
-    not over every peripheral bar. The restrained bars are counted from the
-    number of transverse legs: ncy legs run perpendicular to the top/bottom
-    faces and ncx legs perpendicular to the side faces, so each of those faces
-    carries that many restrained bars, spread across the net core dimension.
-
-    Parameters
-    ----------
-    MLR : array-like, shape (n_layers, 3)
-        Longitudinal reinforcement layers, [depth from top, n bars, diameter].
-        Sorted by depth internally, so callers need not pre-sort.
-    B, H, clb : float
-        Section width, height and clear cover to the longitudinal bars [mm].
-    ncx, ncy : int
-        Transverse legs parallel to B and to H. Values below 2 are treated as
-        2: a closed perimeter hoop always restrains the corner bars.
-
-    Returns
-    -------
-    numpy.ndarray
-        2*(ncy-1) top/bottom gaps followed by 2*(ncx-1) side gaps [mm].
-
-    Notes
-    -----
-    The MLR carries no transverse bar coordinates, so the restrained bars are
-    assumed uniformly spaced on each face; only their diameters come from the
-    layer data. Both the GUI and CUMBIA_RECT.py call this function, so the two
-    entry points cannot drift apart.
-    """
-    arr = np.atleast_2d(np.asarray(MLR, dtype=float))
-    if arr.size == 0:
-        return np.array([])
-
-    arr = arr[arr[:, 0].argsort()]
-    n_restrained_tb = max(int(ncy), 2)
-    n_restrained_side = max(int(ncx), 2)
-
-    Bnet = B - 2 * clb
-    Hnet = H - 2 * clb
-    avg_dbl_tb = (arr[0, 2] + arr[-1, 2]) / 2
-    avg_dbl_side = float(np.mean(arr[:, 2]))
-
-    wi_top = np.full(n_restrained_tb - 1,
-                     (Bnet - n_restrained_tb * avg_dbl_tb) / (n_restrained_tb - 1))
-    wi_side = np.full(n_restrained_side - 1,
-                      (Hnet - n_restrained_side * avg_dbl_side) / (n_restrained_side - 1))
-
-    return np.concatenate((wi_top, wi_top, wi_side, wi_side))
+# The Mander clear distances are a property of the bar layout, not of the
+# material models, so they live in section_geometry. Re-exported here because
+# that is where both engines and any existing user script look for them.
+from section_geometry import wi_mander  # noqa: E402,F401
 
 
 # =============================================================================

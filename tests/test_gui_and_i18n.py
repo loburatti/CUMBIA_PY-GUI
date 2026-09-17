@@ -279,13 +279,12 @@ def test_gui_logic_never_constructs_a_tk_variable(gui, monkeypatch):
 
     assert gui.CumbiaApp._rect_value(app, 'B', '300') == '300.0'
     assert gui.CumbiaApp._compute_auto_mlr(app)
-    assert gui.CumbiaApp._compute_wi(app, mlr)
     assert gui.CumbiaApp._compute_wi_mander(app, mlr)
     assert gui.CumbiaApp._collect_params(app, 'rectangular')['wi_input']
 
 
 # ------------------------------------------------------------- versioning ----
-VERSION = '0.3.4'
+VERSION = '0.3.5'
 
 
 def test_every_version_string_agrees():
@@ -381,3 +380,91 @@ def test_preview_labels_grow_with_a_taller_pane(gui):
     assert big > ref, 'a taller pane must grow the labels'
     assert big <= round(10 * canvas.CANVAS_ZOOM_MAX), 'the zoom must stay bounded'
     assert small == ref, 'a short pane must never shrink them'
+
+
+def test_every_local_module_is_bundled_by_the_spec():
+    """PyInstaller ships the engines as data files, so a module they import
+    has to be listed too or the packaged build fails at run time with an
+    ImportError the source tree never shows."""
+    import re
+
+    spec = open(os.path.join(REPO_ROOT, 'CUMBIA_PY.spec'), encoding='utf-8').read()
+    local = set()
+    for name in ('main.py', 'CUMBIA_RECT.py', 'CUMBIA_CIR.py'):
+        src = open(os.path.join(REPO_ROOT, name), encoding='utf-8').read()
+        for module in re.findall(r'^\s*import (\w+)', src, re.M):
+            if os.path.isfile(os.path.join(REPO_ROOT, f'{module}.py')):
+                local.add(f'{module}.py')
+
+    missing = sorted(m for m in local if m not in spec and m != 'main.py')
+    assert not missing, f'not bundled by CUMBIA_PY.spec: {missing}'
+
+
+# ------------------------------------------------------------ the preview ----
+def _drawn(gui, params):
+    """Run the rectangular preview against a recording canvas.
+
+    _refresh_rect_canvas swallows every exception so a typo in the drawing
+    code shows up as an empty preview rather than a traceback. The drawing
+    routine is therefore called directly here, and what it emits is recorded.
+    """
+    canvas = gui.SectionCanvas.__new__(gui.SectionCanvas)
+    canvas._dark = True
+    canvas._params = params
+    calls = {'line': [], 'text': [], 'oval': [], 'rect': []}
+    canvas.delete = lambda *a, **k: None
+    canvas.create_line = lambda *a, **k: calls['line'].append((a, k))
+    canvas.create_text = lambda *a, **k: calls['text'].append((a, k))
+    canvas.create_oval = lambda *a, **k: calls['oval'].append((a, k))
+    canvas.create_rectangle = lambda *a, **k: calls['rect'].append((a, k))
+    gui.SectionCanvas._draw_rectangular(canvas)
+    return calls
+
+
+def _rect_params(gui, mlr, ncx, ncy, bar_x=None, B=350.0, H=350.0, clb=40.0):
+    import section_geometry as sg
+    return {'_type': 'rectangular', 'B': B, 'H': H, 'clb': clb, 'dv': 8.0,
+            's': 200.0, 'ncx': ncx, 'ncy': ncy, '_mlr': mlr, '_bar_x': bar_x,
+            '_layout': sg.restrained_layout(mlr, B, H, clb, ncx, ncy, bar_x)}
+
+
+def test_preview_draws_every_bar_that_was_typed(gui):
+    mlr = [[48.0, 2, 16.0], [175.0, 2, 16.0], [302.0, 3, 16.0]]
+    calls = _drawn(gui, _rect_params(gui, mlr, 4, 3))
+    # one oval per bar, plus one ring per bar the transverse steel holds
+    assert len(calls['oval']) >= sum(int(row[1]) for row in mlr)
+    assert calls['text'], 'the preview produced no labels'
+
+
+def test_preview_puts_a_leg_on_a_bar_or_not_at_all(gui):
+    """The leg a crosstie cannot hook must not be drawn as if it existed."""
+    mlr = [[48.0, 2, 16.0], [302.0, 3, 16.0]]
+    short = _drawn(gui, _rect_params(gui, mlr, 2, 3))
+    dashed = [c for c in short['line'] if c[1].get('dash') == (4, 3)]
+    assert dashed == [], 'a leg with no bar to hook was drawn'
+
+    with_bar = [[48.0, 3, 16.0], [302.0, 3, 16.0]]
+    full = _drawn(gui, _rect_params(gui, with_bar, 2, 3))
+    assert [c for c in full['line'] if c[1].get('dash') == (4, 3)], (
+        'the leg the layout can host was not drawn')
+
+
+def test_preview_flags_legs_the_layout_cannot_host(gui):
+    """The ncx/ncy read-out says what was declared and what is on bars."""
+    mlr = [[48.0, 2, 16.0], [302.0, 3, 16.0]]
+    texts = [k.get('text', '') for _, k in _drawn(gui, _rect_params(gui, mlr, 2, 3))['text']]
+    info = [t for t in texts if 'ncy' in t]
+    assert info and 'on bars' in info[0], info
+
+
+def test_preview_labels_the_gaps_it_draws(gui):
+    """Each clear distance drawn must carry its value."""
+    mlr = [[48.0, 2, 16.0], [302.0, 2, 16.0]]
+    calls = _drawn(gui, _rect_params(gui, mlr, 2, 2))
+    texts = [k.get('text', '') for _, k in calls['text']]
+    assert '238' in texts, f'the corner-to-corner gap is missing from {texts}'
+
+
+def test_preview_survives_an_empty_or_broken_layer_table(gui):
+    for mlr in ([], [[48.0, 0, 16.0]], [[48.0, 2, 16.0]]):
+        _drawn(gui, _rect_params(gui, mlr, 3, 3))
