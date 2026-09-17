@@ -1,32 +1,49 @@
-Maintenance release: bug fixes, a test suite, and reproducible Windows builds.
+Corrections to the bar buckling models, verified against the original MATLAB release, and a recommended onset in the report.
+
+## What changes in your results
+
+**Analyses in double bending produce different buckling onsets.** Two of the four models were being fed the wrong quantities; the corrections move their predictions and, in some members, make a prediction appear where none was reported before. Single bending (cantilever) analyses are unaffected by the larger of the two fixes. Moment-curvature, the force-displacement backbone, plastic hinge lengths, shear capacity and the deformation limit states are untouched throughout — every fix below is confined to the buckling post-processing.
+
+On the member that prompted this release — 350x350, L = 4000 in double bending, 3+2+3 D16, D8 ties at 200 mm, N = 500 kN — the displacement ductility at the onset of buckling moves like this:
+
+| model | before | after |
+|---|---|---|
+| Moyer-Kowalsky | 1.07 | 1.20 |
+| Goodnight drift-based | *off the curve* | 4.19 |
+| Goodnight strain-based | 3.88 | 4.70 |
+| Berry-Eberhard | 4.82 | 4.82 |
 
 ## Fixes
 
-**Circular sections crashed with M-P interaction disabled.** Selecting `interaction = n` failed with `NameError: PTid` *after* the whole analysis had been computed. The variable exists only when the interaction diagram runs, but the summary report referenced it unconditionally.
+All four models were re-derived from the original MATLAB release and the *CUMBIA Theory and User Guide*. Moyer-Kowalsky and Berry-Eberhard turned out to be faithful ports — coefficients, signs and the use of the shear span all match. The defects were in the two Goodnight models, which exist only in the Python port and were never part of the peer-reviewed MATLAB release, plus one detail inherited from the MATLAB itself.
 
-**The force axis could come out blank.** In the force-displacement figures the tick step was fixed at 0.4·|P|, so whenever the axial load exceeded roughly 3.3 times the force scale every tick above zero fell outside the plotted range and the axis rendered with nothing but the origin. The step now adapts so four to six ticks always land inside the axis.
+**The Goodnight drift model used the member length as its aspect ratio.** The aspect ratio in CUMBIA is the shear span over the depth; Berry-Eberhard uses it correctly two lines above, and the shear model halves the length in double bending. Only this line did not. The result was a member that contradicted itself: a fixed-fixed column of length L and the cantilever of length L/2 it is equivalent to — the same physical column, and drift ratio is the same quantity in both idealisations — returned 6.41 % and 3.84 %. Since the model was calibrated on cantilevers, the double-bending branch was brought back to the single-bending one. Cantilevers are unaffected, and because both scripts ship with single bending, no shipped example ever exercised the broken branch.
 
-**The PDF report could not be opened outside Windows.** `os.startfile` exists only on Windows, so a successful run ended in an error dialog on macOS and Linux.
+**Both Goodnight models were fed half the transverse reinforcement ratio.** Their `rho_s` is the volumetric ratio; the rectangular engine passed the average of the two directions, while Berry-Eberhard on the adjacent line spelled the same quantity correctly. One definition now feeds all three, so they cannot drift apart again. Circular sections were already correct.
 
-**Invalid escape sequences** in six matplotlib labels — a warning today, a syntax error in a future Python.
+**The Moyer-Kowalsky growth strain did not vanish at curvature ductility 1.** The Theory Guide requires zero there, interpolating linearly to its value at curvature ductility 4; the code followed a line through the origin instead, leaving a step and biasing the whole range in between — exactly where the crossing falls on poorly detailed sections. This is a deliberate departure from the MATLAB in favour of the documented model.
 
-**Unreadable preview text.** Dimension callouts and wi values were drawn at 7-8 pt and did not follow the interface scaling, so on a scaled display they were smaller than everything else on screen. Sizes raised and now scaled with the rest of the UI; tooltips enlarged too.
+**Report units.** `Curvature at Buckling` was labelled `m` instead of `1/m`, and `Moment for Buckling` `kN` instead of `kN-m`, in the Moyer-Kowalsky and Berry-Eberhard blocks of both engines.
 
-**Input validation.** A malformed number in a form field was kept as text and surfaced much later as an obscure numpy error. Bad input is now reported immediately, naming the field and the value.
+## Model applicability
 
-**Untranslated strings**, including an Italian label shown in the English interface.
+The Moyer-Kowalsky critical strain collapses as the tie spacing grows — at `s/db = 12.5` it falls to 0.0054, predicting buckling almost at yield — and nothing in the report said so. The report now carries an applicability notes block, printed only when a note applies: a tie spacing outside the range the model was calibrated on, an allowable strain that turns negative, and, on rectangular sections, the extrapolation involved in applying a circular-column calibration to a rectangular core.
 
-## Confinement calculation
+## Recommended onset and governing mechanism
 
-The Mander restrained-bar spacing `wi` was implemented three times — the values sent to the analysis, the arrows in the section preview, and the automatic branch of the rectangular engine. They agreed, but nothing enforced it. The formula now lives in one place, verified equivalent to the previous code over 576 combinations of layout, geometry and leg count, so results are unchanged.
+The report listed the four models side by side and left the reader to choose. Each model that produces an onset is now classified against its own calibration — applicable, extrapolated, or excluded — and the lowest onset among those not excluded is highlighted as the recommended value.
 
-Script mode also shipped a default `wi_input` that did not fit inside its own default section. It now selects the automatic calculation, matching what the GUI computes for the same member. Users supplying their own `wi_input` are unaffected, as is every GUI run.
+Berry-Eberhard is the only model with a native rectangular calibration, so on a rectangular section the others are marked as extrapolated; on a circular section all three are native. Moyer-Kowalsky is excluded wherever `s/db > 8`.
 
-## Testing and builds
+A recommended onset means nothing on a member that fails in shear first, so the block also compares it against the shear failure displacement and the ultimate deformation capacity and names which of the three actually limits the member. When bar buckling is not the governing mechanism, the caveat is printed inside the highlighted box.
 
-The project now has a test suite — 152 tests covering the material models, the confinement calculation, full-run regression against recorded results, every option the interface offers, and the translation layer. It runs on Python 3.10 and 3.12 on every push.
+Neither the Theory Guide nor the source publications rank the models against each other, so this ranking is supplied by CUMBIA_PY as a decision aid and the report prints the rule in full. It is meant to be overridden where judgement requires. The figures are unchanged.
 
-Windows packages are now built by GitHub Actions on a clean runner rather than on a developer machine, which also keeps local paths out of the published binary.
+## Testing
+
+The suite is now 171 tests, up from 152, running on Python 3.10 and 3.12 on every push. The nineteen new ones pin invariants rather than numbers: that the drift limit is the same whether a column is idealised as a cantilever or as a fixed-fixed member, that every model written in terms of `rho_s` is fed the same `rho_s`, that the growth strain matches the published interpolation, and that an excluded model never becomes the recommended value even when it is the lowest. Each was checked to fail when its fix is reverted.
+
+The golden regression files record no buckling output, so none needed regenerating and the 152 previous tests pass unchanged.
 
 ## Download
 

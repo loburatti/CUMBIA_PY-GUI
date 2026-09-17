@@ -52,9 +52,14 @@ The automatic `wi` calculation now correctly computes clear distances between **
 
 The calculation lives in a single place, `material_models.wi_mander()`, shared by the GUI, the section preview and the analysis script, so the three can no longer disagree. Script mode now defaults to `wi_input = [0]` (automatic), matching what the GUI computes for the same section.
 
-### 2. Buckling Models Fix (CUMBIA_RECT.py)
-- **Goodnight et al. (2015):** strain-based and drift-based formulas now use the average transverse steel ratio across both directions instead of `rho_y` (Y-direction only).
-- **Moyer & Kowalsky:** the critical strain formula now uses the extreme fiber bar diameter (`dbl_extreme`) instead of the maximum bar diameter in the section.
+### 2. Buckling Models Fix
+All four models were verified against the original MATLAB release and the *CUMBIA Theory and User Guide*. Moyer-Kowalsky and Berry-Eberhard are faithful ports; the defects were in the two Goodnight models, which exist only in the Python port.
+
+- **Goodnight et al., drift-based:** the aspect-ratio term used the full member length instead of the shear span, so a fixed-fixed column and the equivalent cantilever — the same physical column — returned drift limits differing by 67%. Now `LBE/H` (`LBE/D` for circular sections), consistent with Berry-Eberhard and the shear model. Cantilevers are unaffected.
+- **Goodnight et al., both models:** fed `rho_s/2` instead of the volumetric transverse ratio. A single `TransvSteelRatioVolumetric` now feeds the Goodnight and Berry-Eberhard formulas alike. Circular sections were already correct.
+- **Moyer & Kowalsky:** the growth strain now vanishes at curvature ductility 1 as the guide specifies, instead of following a line through the origin. The critical strain formula uses the extreme fibre bar diameter (`dbl_extreme`).
+- **Applicability notes:** the report now flags a tie spacing outside the Moyer-Kowalsky calibration range, an allowable strain that turns negative, and the extrapolation involved in applying the Goodnight models to a rectangular core.
+- **Recommended onset and governing mechanism:** each model is classified as applicable, extrapolated or excluded against its own calibration domain, and the report highlights the lowest onset among those not excluded — then states whether bar buckling, shear failure or the ultimate deformation capacity actually governs the member. The selection rule is CUMBIA_PY's own and is printed in full; the source publications do not rank the models against each other. Figures are unchanged.
 
 ### 3. Theoretical Enhancements (from v0.2)
 - **Modified Plastic-Hinge Method:** Goodnight et al. (2016) method with decoupled flexure and strain penetration components

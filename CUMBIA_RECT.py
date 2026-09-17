@@ -1,3 +1,5 @@
+import textwrap
+
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -282,8 +284,11 @@ Asy = ncy * (np.pi * dv**2) / 4
 TransvSteelRatioX = Asx / (s * Hcore)
 TransvSteelRatioY = Asy / (s * Bcore)
 TransvSteelRatioAverage = (TransvSteelRatioX + TransvSteelRatioY) * 0.5
+# Equivalent volumetric transverse ratio of the core (rho_s in the buckling models).
+# Berry-Eberhard and both Goodnight models are all written in terms of rho_s, so the
+# definition lives here once instead of being re-derived at each call site.
+TransvSteelRatioVolumetric = TransvSteelRatioX + TransvSteelRatioY
 AxialRatio = P / (fpc * Agross)
-rho_y = Asy / (s * bc)
 
 # ------------------------------------------------------------------------------
 # Calculate wi (Clear distances between RESTRAINED longitudinal bars)
@@ -730,8 +735,21 @@ bucritGN_strain = 0
 failCuDuGN_strain, buckldisplGN_strain, bucklforceGN_strain = 0, 0, 0
 CuDu = curv / eqcurv
 
+# Applicability notes collected while the models run, printed in the report.
+buckling_notes = []
+
+# Allowable steel compression strain (Moyer-Kowalsky). Purely geometric, so it is
+# available for the applicability check even when the model itself does not run.
+escc = 3 * ((s / dbl_extreme)**(-2.5))
+s_over_db = s / dbl_extreme
+if s_over_db > 8:
+    buckling_notes.append(
+        f"Moyer-Kowalsky: s/db = {s_over_db:.1f} is outside the range the model was calibrated on "
+        f"(roughly 3 to 8). The allowable compression strain 3*(s/db)^-2.5 = {escc:.5f} is an "
+        f"extrapolation, so this onset is not comparable with the other models.")
+
 # Evaluate Goodnight Strain Limit
-es_bb = 0.03 + 700 * TransvSteelRatioAverage * (fyh / Es) - 0.1 * AxialRatio
+es_bb = 0.03 + 700 * TransvSteelRatioVolumetric * (fyh / Es) - 0.1 * AxialRatio
 fail_gn_strain = es_bb - (-steelstrain)
 
 fig4, ax1_p4 = plt.subplots(figsize=(6.5, 4.5))
@@ -757,13 +775,21 @@ if fail_gn_strain[-1] <= 0:
 # Evaluate Moyer-Kowalsky Limit (Only applicable if Ductility > 4)
 if SectionCurvatureDuctility > 4:
     esgr4 = -0.5 * np.interp(4, CuDu, steelstrain)
-    escc = 3 * ((s / dbl_extreme)**(-2.5))
     esgr = np.zeros_like(steelstrain)
     for i in range(len(steelstrain)):
+        # The growth strain is zero at curvature ductility 1 and interpolates linearly
+        # up to esgr4 at curvature ductility 4 (CUMBIA Theory and User Guide, section 6).
         if CuDu[i] < 1: esgr[i] = 0
-        elif 1 <= CuDu[i] <= 4: esgr[i] = (esgr4 / 4) * CuDu[i]
+        elif 1 <= CuDu[i] <= 4: esgr[i] = esgr4 * (CuDu[i] - 1) / 3
         else: esgr[i] = -0.5 * steelstrain[i]
     esfl = escc - esgr
+
+    if np.min(esfl) < 0:
+        mu_esfl_neg = CuDu[np.argmax(esfl < 0)]
+        buckling_notes.append(
+            f"Moyer-Kowalsky: the allowable tension strain turns negative beyond curvature "
+            f"ductility {mu_esfl_neg:.2f}, which has no physical meaning. Past that point the "
+            f"model is being used well outside its intended range.")
     
     ax1_p4.plot(CuDu, esfl, color='cornflowerblue', linestyle='--', linewidth=2, label='Flexural Tension Strain (M&K)')
     
@@ -795,7 +821,7 @@ bucritBE = 0
 failCuDuBE, buckldisplBE, bucklforceBE = 0, 0, 0
 C0, C1, C2, C3, C4 = 0.019, 1.650, 1.797, 0.012, 0.072 
 
-roeff = 2 * TransvSteelRatioAverage * fyh / fpc
+roeff = TransvSteelRatioVolumetric * fyh / fpc
 rotb = C0 * (1 + C1*roeff) * ((1 + C2*P/(Agross*fpc))**-1) * (1 + C3*LBE/H + C4*dbl_extreme*fy/H)
 plrot = (curv - fycurv) * Lp / 1000
 
@@ -830,7 +856,9 @@ fig5.tight_layout()
 # Goodnight et al. (2015) Drift-Based Buckling Model
 bucritGN_drift = 0
 failCuDuGN_drift, buckldisplGN_drift, bucklforceGN_drift = 0, 0, 0
-drift_bb_pct = 0.9 - 3.13 * AxialRatio + 142000 * TransvSteelRatioAverage * (fyh / Es) + 0.45 * (L / H)
+# LBE is the shear span (L for single bending, L/2 for double): the aspect ratio in
+# this model is Lc/D, the same one used by Berry-Eberhard above and by the shear model.
+drift_bb_pct = 0.9 - 3.13 * AxialRatio + 142000 * TransvSteelRatioVolumetric * (fyh / Es) + 0.45 * (LBE / H)
 buckldisplGN_drift = (drift_bb_pct / 100.0) * (L / 1000)
 
 if 0 < buckldisplGN_drift <= displ[-1]:
@@ -840,7 +868,37 @@ if 0 < buckldisplGN_drift <= displ[-1]:
     bucklcurvGN_drift = np.interp(buckldisplGN_drift, displ, curv)
     bucklDdGN_drift = np.interp(buckldisplGN_drift, displ, Dduct)
     bucklmomGN_drift = np.interp(buckldisplGN_drift, displ, mom)
-    
+
+# Collect what each model produced, with how far it is from its calibration.
+# Berry-Eberhard is the only model with a native rectangular calibration
+# (62 rectangular-reinforced columns); Moyer-Kowalsky and both Goodnight
+# models were calibrated on circular columns, so on this section they
+# extrapolate the geometry.
+buckling_results = []
+if bucritMK == 1:
+    buckling_results.append({
+        'name': 'Moyer - Kowalsky', 'Dduct': bucklDd, 'displ': buckldispl,
+        'status': mm.EXCLUDED if s_over_db > 8 else mm.EXTRAPOLATED})
+if bucritBE == 1:
+    buckling_results.append({
+        'name': 'Berry - Eberhard', 'Dduct': bucklDdBE, 'displ': buckldisplBE,
+        'status': mm.APPLICABLE})
+if bucritGN_strain == 1:
+    buckling_results.append({
+        'name': 'Goodnight et al. (strain-based)', 'Dduct': bucklDdGN_strain,
+        'displ': buckldisplGN_strain, 'status': mm.EXTRAPOLATED})
+if bucritGN_drift == 1:
+    buckling_results.append({
+        'name': 'Goodnight et al. (drift-based)', 'Dduct': bucklDdGN_drift,
+        'displ': buckldisplGN_drift, 'status': mm.EXTRAPOLATED})
+
+if bucritGN_strain == 1 or bucritGN_drift == 1:
+    buckling_notes.append(
+        "Goodnight, Kowalsky & Nau: both models were calibrated on circular, spiral-reinforced "
+        "columns tested as cantilevers. Applying them to a rectangular section is an "
+        f"extrapolation: rho_s is taken as the equivalent volumetric ratio rho_x + rho_y = "
+        f"{TransvSteelRatioVolumetric:.5f} and the aspect ratio as LBE/H = {LBE/H:.2f}.")
+
 # Shear Capacity
 dy1f = np.interp(fycurv, curv, displf)
 dyf = (Mn / fyM) * dy1f
@@ -1303,22 +1361,22 @@ if bucritMK == 1:
     add_line("Moyer - Kowalsky buckling model:")
     add_line("")
     add_line(f"Curvature Ductility for Buckling:      {failCuDuMK:.2f}")
-    add_line(f"Curvature at Buckling:  {bucklcurv:.5f} m") 
+    add_line(f"Curvature at Buckling:  {bucklcurv:.5f} 1/m")
     add_line(f"Displacement Ductility at Buckling:       {bucklDd:.2f}")
     add_line(f"Displacement at Buckling:  {buckldispl:.5f} m")
     add_line(f"Force for Buckling:   {bucklforce:.2f} kN")
-    add_line(f"Moment for Buckling:   {bucklmom:.2f} kN")
+    add_line(f"Moment for Buckling:   {bucklmom:.2f} kN-m")
     add_line("")
     
 if bucritBE == 1:
     add_line("Berry - Eberhard buckling model:")
     add_line("")
     add_line(f"Curvature Ductility for Buckling:      {failCuDuBE:.2f}")
-    add_line(f"Curvature at Buckling:  {bucklcurvBE:.5f} m")
+    add_line(f"Curvature at Buckling:  {bucklcurvBE:.5f} 1/m")
     add_line(f"Displacement Ductility at Buckling:       {bucklDdBE:.2f}")
     add_line(f"Displacement at Buckling:  {buckldisplBE:.5f} m")
     add_line(f"Force for Buckling:   {bucklforceBE:.2f} kN")
-    add_line(f"Moment for Buckling:   {bucklmomBE:.2f} kN")
+    add_line(f"Moment for Buckling:   {bucklmomBE:.2f} kN-m")
     add_line("")
 
 if bucritGN_strain == 1:
@@ -1341,6 +1399,20 @@ if bucritGN_drift == 1:
     add_line(f"Displacement at Buckling:  {buckldisplGN_drift:.5f} m")
     add_line(f"Force for Buckling:   {bucklforceGN_drift:.2f} kN")
     add_line(f"Moment for Buckling:   {bucklmomGN_drift:.2f} kN-m")
+    add_line("")
+
+for line in mm.buckling_recommendation(
+        buckling_results, ultimate_Dduct=float(Dduct[-1]),
+        shear_Dduct=(float(failduct) if criteria != 1 else None)):
+    add_line(line)
+
+if buckling_notes:
+    add_line("Buckling model applicability notes:")
+    add_line("")
+    for note in buckling_notes:
+        for wrapped in textwrap.wrap(note, width=96, initial_indent="  - ",
+                                     subsequent_indent="    "):
+            add_line(wrapped)
     add_line("")
 
 

@@ -285,7 +285,7 @@ def test_gui_logic_never_constructs_a_tk_variable(gui, monkeypatch):
 
 
 # ------------------------------------------------------------- versioning ----
-VERSION = '0.3.3'
+VERSION = '0.3.4'
 
 
 def test_every_version_string_agrees():
