@@ -345,8 +345,39 @@ def test_preview_font_helper_applies_the_scaling_factor(gui, monkeypatch):
 
 
 def test_tooltip_text_is_large_enough(gui):
-    import re
-    src = open(os.path.join(REPO_ROOT, 'main.py'), encoding='utf-8').read()
-    tip = re.search(r"class Tip:.*?font=\('Segoe UI', (\d+)\)", src, re.S)
-    assert tip, 'tooltip font not found'
-    assert int(tip.group(1)) >= 12, f'tooltip is {tip.group(1)} pt — too small'
+    """The hover help is read at a glance, so it may not be smaller than the
+    interface around it."""
+    assert gui.Tip.SIZE >= 14, f'tooltip is {gui.Tip.SIZE} pt - too small'
+
+
+def test_tooltip_font_follows_the_interface_scaling(gui, monkeypatch):
+    """A tooltip is a bare tk.Toplevel, outside CustomTkinter's scaling."""
+    class _Tracker:
+        @staticmethod
+        def get_widget_scaling(_widget):
+            return 1.5
+
+    monkeypatch.setattr(gui.ctk, 'ScalingTracker', _Tracker, raising=False)
+    assert gui.scaled_font_size(None, 10) == 15
+
+
+def test_preview_labels_are_large_enough(gui):
+    """Every callout drawn on the preview canvas, at its declared size."""
+    canvas = gui.SectionCanvas
+    for name in ('S_DIM', 'S_DIM_SM', 'S_INFO', 'S_WI', 'S_WI_CONF'):
+        assert getattr(canvas, name) >= 14, f'{name} is too small to read'
+
+
+def test_preview_labels_grow_with_a_taller_pane(gui):
+    """A preview shown in a tall pane scales its labels with the drawing."""
+    canvas = gui.SectionCanvas
+    inst = canvas.__new__(canvas)
+    inst.winfo_height = lambda: canvas.CANVAS_REF_H * 3
+    _, big = canvas._font(inst, 10)
+    inst.winfo_height = lambda: canvas.CANVAS_REF_H
+    _, ref = canvas._font(inst, 10)
+    inst.winfo_height = lambda: canvas.CANVAS_REF_H // 4
+    _, small = canvas._font(inst, 10)
+    assert big > ref, 'a taller pane must grow the labels'
+    assert big <= round(10 * canvas.CANVAS_ZOOM_MAX), 'the zoom must stay bounded'
+    assert small == ref, 'a short pane must never shrink them'

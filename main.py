@@ -204,10 +204,56 @@ RECT_LABELS.update({
 
 
 # ==========================================================================
+# Font scaling
+# ==========================================================================
+def scaled_font_size(widget, size):
+    """`size` points corrected for the interface scaling factor.
+
+    Raw tk widgets (canvas text, tooltips) are not covered by CustomTkinter's
+    widget scaling, so on a scaled display they came out smaller than
+    everything around them. Reading the same factor keeps them in proportion;
+    if it cannot be read, the unscaled size is used.
+    """
+    try:
+        factor = ctk.ScalingTracker.get_widget_scaling(widget)
+    except Exception:
+        factor = 1.0
+    if not isinstance(factor, (int, float)) or factor <= 0:
+        factor = 1.0
+    return max(int(round(size * factor)), size)
+
+
+def sorted_mlr(mlr):
+    """Reinforcement layers ordered from the top face down.
+
+    A layer can be typed into the table in any order, but everything
+    downstream reads MLR[0] as the top face and MLR[-1] as the bottom one:
+    the engine sorts the matrix before using it, and the preview needs the
+    same order to draw a gap between the right pair of layers. Sorting a
+    working copy here keeps a row typed out of sequence from producing a
+    negative clear distance or the wrong extreme-fibre bar diameter, without
+    reshuffling the table under the cursor while it is being edited.
+    """
+    rows = []
+    for layer in mlr:
+        try:
+            rows.append([float(layer[0]), int(layer[1]), float(layer[2])])
+        except (TypeError, ValueError, IndexError):
+            continue
+    return sorted(rows, key=lambda r: r[0])
+
+
+# ==========================================================================
 # Tooltip widget
 # ==========================================================================
 class Tip:
     """Hover tooltip for any widget."""
+
+    # A tooltip is a plain tk.Toplevel, so CustomTkinter's widget scaling does
+    # not reach it; scaled_font_size applies the same factor the rest of the
+    # interface uses. Change this one number to resize every tooltip.
+    SIZE = 16
+
     def __init__(self, widget, text):
         self.widget = widget
         self.text = text
@@ -224,10 +270,12 @@ class Tip:
         tw.wm_overrideredirect(True)
         tw.wm_geometry(f'+{x}+{y}')
         tw.wm_attributes('-topmost', True)
+        size = scaled_font_size(self.widget, self.SIZE)
         lbl = tk.Label(tw, text=self.text, justify='left',
                        background='#333', foreground='#eee',
                        relief='solid', borderwidth=1,
-                       font=('Segoe UI', 13), wraplength=480, padx=10, pady=7)
+                       font=('Segoe UI', size),
+                       wraplength=int(44 * size), padx=12, pady=9)
         lbl.pack()
 
     def _hide(self, _event=None):
@@ -256,11 +304,17 @@ class SectionCanvas(tk.Canvas):
 
     # Drawing label sizes, in points before scaling. Adjust here: every label
     # in the preview derives from these five numbers.
-    S_DIM      = 13      # H, B and the D callout
-    S_DIM_SM   = 11      # the tighter cover callout
-    S_INFO     = 13      # the ncx / ncy / s block
-    S_WI       = 11      # bar-to-bar gaps
-    S_WI_CONF  = 11      # Mander restrained-bar gaps
+    S_DIM      = 18      # H, B and the D callout
+    S_DIM_SM   = 15      # the tighter cover callout
+    S_INFO     = 17      # the ncx / ncy / s block
+    S_WI       = 15      # bar-to-bar gaps
+    S_WI_CONF  = 15      # Mander restrained-bar gaps
+
+    # Reference canvas height the sizes above are written for. A preview shown
+    # in a taller pane grows its labels with it, up to CANVAS_ZOOM_MAX; a
+    # smaller pane never shrinks them below the sizes above.
+    CANVAS_REF_H  = 420
+    CANVAS_ZOOM_MAX = 1.5
 
     def __init__(self, parent, **kw):
         kw.setdefault('highlightthickness', 0)
@@ -274,21 +328,18 @@ class SectionCanvas(tk.Canvas):
         return pair[0] if self._dark else pair[1]
 
     def _font(self, size, bold=False):
-        """A canvas font that follows the interface scaling.
+        """A canvas font that follows the interface scaling and the pane size.
 
-        A tk.Canvas draws its own text and is not covered by CustomTkinter's
-        widget scaling, so on a scaled display these labels came out smaller
-        than every other element on screen. Reading the same factor keeps
-        them in proportion; if it cannot be read, the unscaled size is used.
+        Two corrections on top of the declared point size: the CustomTkinter
+        scaling factor, which a tk.Canvas does not get on its own, and a zoom
+        for a preview pane taller than CANVAS_REF_H, so the callouts stay
+        readable next to a section drawn several hundred pixels tall.
         """
-        try:
-            factor = ctk.ScalingTracker.get_widget_scaling(self)
-        except Exception:
-            factor = 1.0
-        if not isinstance(factor, (int, float)) or factor <= 0:
-            factor = 1.0
-        scaled = max(int(round(size * factor)), size)
-        return ('Segoe UI', scaled, 'bold') if bold else ('Segoe UI', scaled)
+        ch = self.winfo_height() or self.CANVAS_REF_H
+        zoom = min(max(ch / self.CANVAS_REF_H, 1.0), self.CANVAS_ZOOM_MAX)
+        return (('Segoe UI', scaled_font_size(self, int(round(size * zoom))), 'bold')
+                if bold else
+                ('Segoe UI', scaled_font_size(self, int(round(size * zoom)))))
 
     @property
     def F_DIM(self):
@@ -349,7 +400,7 @@ class SectionCanvas(tk.Canvas):
 
         cw = self.winfo_width() or 400
         ch = self.winfo_height() or 400
-        margin = 50
+        margin = 62
         R = D / 2
         sc = min((cw - 2 * margin) / D, (ch - 2 * margin) / D)
         cx, cy = cw / 2, ch / 2
@@ -399,7 +450,7 @@ class SectionCanvas(tk.Canvas):
         mlr = p.get('_mlr', [])
         wi_mander = p.get('_wi_mander', [])
 
-        sc, ox, oy = self._scale_rect(H, B, margin=55)
+        sc, ox, oy = self._scale_rect(H, B, margin=78)
 
         def xy(xm, ym):
             return ox + xm * sc, oy + ym * sc
@@ -904,7 +955,8 @@ class CumbiaApp(ctk.CTk):
         self._v_wi.trace_add('write', lambda *_: self._refresh_rect_canvas())
 
         self._wi_display = ctk.CTkLabel(sw_frame, text=f'{T("wi_label")} = []', anchor='w',
-                                        font=('Consolas', 9))
+                                        justify='left', wraplength=380,
+                                        font=('Consolas', 13))
         self._wi_display.pack(anchor='w', padx=6, pady=2)
 
         self._refresh_rect_canvas()
@@ -1057,6 +1109,7 @@ class CumbiaApp(ctk.CTk):
                 mlr = self._compute_auto_mlr()
             else:
                 mlr = self._mlr_editor.get_mlr()
+            mlr = sorted_mlr(mlr)
             p['_mlr'] = mlr
 
             # wi
@@ -1179,10 +1232,11 @@ class CumbiaApp(ctk.CTk):
                     'Dbl_auto', self._v_Dbl_auto.get().strip())
             else:
                 params['auto_generate_MLR'] = False
-                params['custom_MLR'] = self._mlr_editor.get_mlr()
+                params['custom_MLR'] = sorted_mlr(self._mlr_editor.get_mlr())
 
             if self._wi_auto.get():
-                mlr = self._compute_auto_mlr() if is_auto else self._mlr_editor.get_mlr()
+                mlr = sorted_mlr(self._compute_auto_mlr() if is_auto
+                                 else self._mlr_editor.get_mlr())
                 params['wi_input'] = self._compute_wi_mander(mlr)
             else:
                 params['wi_input'] = [
