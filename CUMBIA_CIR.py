@@ -1,3 +1,5 @@
+import textwrap
+
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -674,6 +676,19 @@ bucklcurvGN_strain, bucklDdGN_strain, bucklmomGN_strain, failss_gn = 0, 0, 0, 0
 
 CuDu = curv / eqcurv
 
+# Applicability notes collected while the models run, printed in the report.
+buckling_notes = []
+
+# Allowable steel compression strain (Moyer-Kowalsky). Purely geometric, so it is
+# available for the applicability check even when the model itself does not run.
+escc = 3 * ((s / Dbl)**(-2.5))
+s_over_db = s / Dbl
+if s_over_db > 8:
+    buckling_notes.append(
+        f"Moyer-Kowalsky: s/db = {s_over_db:.1f} is outside the range the model was calibrated on "
+        f"(roughly 3 to 8). The allowable compression strain 3*(s/db)^-2.5 = {escc:.5f} is an "
+        f"extrapolation, so this onset is not comparable with the other models.")
+
 # Goodnight Eqn 2: Peak tensile strain prior to bar buckling
 es_bb = 0.03 + 700 * TransvSteelRatio * (fyh / Es) - 0.1 * AxialRatio
 
@@ -705,13 +720,21 @@ if bucritGN_strain == 1:
 # 2. Evaluate Moyer-Kowalsky Limit (Only run the math if Ductility > 4)
 if SectionCurvatureDuctility > 4:
     esgr4 = -0.5 * np.interp(4, CuDu, steelstrain)
-    escc = 3 * ((s / Dbl)**(-2.5))
     esgr = np.zeros_like(steelstrain)
     for i in range(len(steelstrain)):
+        # The growth strain is zero at curvature ductility 1 and interpolates linearly
+        # up to esgr4 at curvature ductility 4 (CUMBIA Theory and User Guide, section 6).
         if CuDu[i] < 1: esgr[i] = 0
-        elif 1 <= CuDu[i] <= 4: esgr[i] = (esgr4 / 4) * CuDu[i]
+        elif 1 <= CuDu[i] <= 4: esgr[i] = esgr4 * (CuDu[i] - 1) / 3
         else: esgr[i] = -0.5 * steelstrain[i]
     esfl = escc - esgr
+
+    if np.min(esfl) < 0:
+        mu_esfl_neg = CuDu[np.argmax(esfl < 0)]
+        buckling_notes.append(
+            f"Moyer-Kowalsky: the allowable tension strain turns negative beyond curvature "
+            f"ductility {mu_esfl_neg:.2f}, which has no physical meaning. Past that point the "
+            f"model is being used well outside its intended range.")
 
     ax1_p4.plot(CuDu, esfl, color='cornflowerblue', linestyle='--', linewidth=2, label='Flexural Tension Strain (M&K)')
 
@@ -783,7 +806,9 @@ failCuDuGN_drift, buckldisplGN_drift, bucklforceGN_drift = 0, 0, 0
 bucklcurvGN_drift, bucklDdGN_drift, bucklmomGN_drift = 0, 0, 0
 
 # Eqn 4: Drift-Based limit (%)
-drift_bb_pct = 0.9 - 3.13 * AxialRatio + 142000 * TransvSteelRatio * (fyh / Es) + 0.45 * (L / D)
+# LBE is the shear span (L for single bending, L/2 for double): the aspect ratio in
+# this model is Lc/D, the same one used by Berry-Eberhard above and by the shear model.
+drift_bb_pct = 0.9 - 3.13 * AxialRatio + 142000 * TransvSteelRatio * (fyh / Es) + 0.45 * (LBE / D)
 buckldisplGN_drift = (drift_bb_pct / 100.0) * (L / 1000)
 
 if 0 < buckldisplGN_drift <= displ[-1]:
@@ -1281,22 +1306,22 @@ if bucritMK == 1:
     add_line("Moyer - Kowalsky buckling model:")
     add_line("")
     add_line(f"Curvature Ductility for Buckling:      {failCuDuMK:.2f}")
-    add_line(f"Curvature at Buckling:  {bucklcurv:.5f} m") 
+    add_line(f"Curvature at Buckling:  {bucklcurv:.5f} 1/m")
     add_line(f"Displacement Ductility at Buckling:       {bucklDd:.2f}")
     add_line(f"Displacement at Buckling:  {buckldispl:.5f} m")
     add_line(f"Force for Buckling:   {bucklforce:.2f} kN")
-    add_line(f"Moment for Buckling:   {bucklmom:.2f} kN")
+    add_line(f"Moment for Buckling:   {bucklmom:.2f} kN-m")
     add_line("")
     
 if bucritBE == 1:
     add_line("Berry - Eberhard buckling model:")
     add_line("")
     add_line(f"Curvature Ductility for Buckling:      {failCuDuBE:.2f}")
-    add_line(f"Curvature at Buckling:  {bucklcurvBE:.5f} m")
+    add_line(f"Curvature at Buckling:  {bucklcurvBE:.5f} 1/m")
     add_line(f"Displacement Ductility at Buckling:       {bucklDdBE:.2f}")
     add_line(f"Displacement at Buckling:  {buckldisplBE:.5f} m")
     add_line(f"Force for Buckling:   {bucklforceBE:.2f} kN")
-    add_line(f"Moment for Buckling:   {bucklmomBE:.2f} kN")
+    add_line(f"Moment for Buckling:   {bucklmomBE:.2f} kN-m")
     add_line("")
 
 if bucritGN_strain == 1:
@@ -1319,6 +1344,15 @@ if bucritGN_drift == 1:
     add_line(f"Displacement at Buckling:  {buckldisplGN_drift:.5f} m")
     add_line(f"Force for Buckling:   {bucklforceGN_drift:.2f} kN")
     add_line(f"Moment for Buckling:   {bucklmomGN_drift:.2f} kN-m")
+    add_line("")
+
+if buckling_notes:
+    add_line("Buckling model applicability notes:")
+    add_line("")
+    for note in buckling_notes:
+        for wrapped in textwrap.wrap(note, width=96, initial_indent="  - ",
+                                     subsequent_indent="    "):
+            add_line(wrapped)
     add_line("")
 
 # Force a page break by padding blank lines until the next multiple of 72

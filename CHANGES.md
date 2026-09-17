@@ -249,3 +249,126 @@ sizes can be adjusted in one place instead of at eleven call sites.
 engines at several axial loads and asserts the force axis of the real figures
 carries more than one tick, with the left and right axes aligned. Verified to
 fail against the previous formula.
+
+---
+
+## 8. Buckling models: verification against the original MATLAB (0.3.4)
+
+The four buckling models were re-derived from the two primary sources — the
+original MATLAB release (`LuisMontejo/CUMBIA`, `CUMBIARECT.m` / `CUMBIACIR.m`)
+and the *CUMBIA Theory and User Guide*, section 6 and equations 47-49 — after a
+rectangular column in double bending produced onsets spread over a factor of
+four (Moyer-Kowalsky at displacement ductility 1.07, Goodnight strain at 3.88,
+Berry-Eberhard at 4.82, Goodnight drift off the end of the curve entirely).
+
+Moyer-Kowalsky and Berry-Eberhard turned out to be faithful ports: the
+coefficients, the sign of `esfl = escc - esgr` and the use of `LBE` as the shear
+span all match the guide. The defects were in the two Goodnight models, which
+exist only in the Python port and were never part of the peer-reviewed MATLAB
+release, plus one growth-strain detail inherited from the MATLAB itself.
+
+### 8.1 Goodnight drift model used the member length as the aspect ratio
+
+**Problem:** the drift limit read
+
+```python
+drift_bb_pct = 0.9 - 3.13*AxialRatio + 142000*rho*(fyh/Es) + 0.45*(L/H)
+```
+
+`0.45*(L/H)` is the aspect-ratio term, and the aspect ratio in CUMBIA is
+`Lc/D`, the shear span over the depth — the guide states it explicitly (p. 18),
+Berry-Eberhard uses `LBE` two lines above, and the shear model uses `L/(2*H)`
+in the same file. Only this line used the undivided member length.
+
+The consequence is a member that is not self-consistent. A fixed-fixed column
+of length `L` with its point of contraflexure at midheight is the same physical
+column as a cantilever of length `L/2`, and drift ratio is the same quantity in
+both idealisations (`d_total/L_total == d_tip/Lc`), so the drift limit has to
+come out the same. It did not:
+
+| idealisation of the same column | aspect term | drift limit |
+|---|---|---|
+| `bending='single'`, L=2000 | 5.71 | 3.84 % |
+| `bending='double'`, L=4000 | 11.43 | 6.41 % |
+
+The gap is exactly `0.45*Lc/H`. Since Goodnight et al. tested cantilevers, the
+single-bending branch is the calibrated one and the double-bending branch was
+brought back to it.
+
+**Fix:** `0.45*(LBE/H)` in `CUMBIA_RECT.py`, `0.45*(LBE/D)` in `CUMBIA_CIR.py`.
+`LBE` was already defined as `L` for single bending and `L/2` for double, so
+**cantilevers are unaffected** — and since both scripts ship with
+`bending = 'single'`, no shipped example ever exercised the broken branch.
+
+### 8.2 The Goodnight models were fed half the transverse ratio
+
+**Problem:** Goodnight's `rho_s` is the volumetric transverse ratio. In
+`CUMBIA_RECT.py` the two Goodnight formulas were given
+`TransvSteelRatioAverage`, which is `rho_s/2`, while Berry-Eberhard on the
+adjacent line correctly spelled the same quantity `2*TransvSteelRatioAverage`.
+Version 0.3.0 had already moved these formulas off `rho_y` (§2 above); the
+remaining factor of two survived that change.
+
+**Fix:** a single `TransvSteelRatioVolumetric = TransvSteelRatioX +
+TransvSteelRatioY` now feeds `es_bb`, `drift_bb_pct` **and** `roeff`, so the
+three models can no longer drift apart. Berry-Eberhard is numerically
+unchanged. `CUMBIA_CIR.py` needed no change: its `TransvSteelRatio` is already
+volumetric. The dead `rho_y` variable was removed.
+
+### 8.3 Moyer-Kowalsky growth strain did not vanish at curvature ductility 1
+
+**Problem:** the guide states the growth strain is zero at curvature ductility
+1 and interpolates linearly to `esgr4` at curvature ductility 4. Both the
+MATLAB and the Python port wrote `esgr = (esgr4/4)*mu_phi`, a line through the
+origin, which leaves a step of `esgr4/4` at `mu_phi = 1` and biases the whole
+1-to-4 range — exactly where the crossing falls for poorly detailed sections.
+
+**Fix:** `esgr = esgr4*(mu_phi - 1)/3`. This is a deliberate departure from the
+MATLAB in favour of the documented model.
+
+### 8.4 Applicability notes in the report
+
+The Moyer-Kowalsky critical strain `3*(s/db)^-2.5` collapses outside the range
+the model was calibrated on, and nothing said so. The report now carries a
+`Buckling model applicability notes` block, emitted only when a note applies:
+
+* `s/db` outside roughly 3 to 8, with the resulting `escc` quoted;
+* the allowable tension strain turning negative, with the curvature ductility
+  at which it does;
+* on rectangular sections, a standing note that both Goodnight models were
+  calibrated on circular spiral-reinforced columns, quoting the equivalent
+  `rho_s` and aspect ratio actually used.
+
+### 8.5 Report units
+
+`Curvature at Buckling` was labelled `m` instead of `1/m`, and `Moment for
+Buckling` `kN` instead of `kN-m`, in the Moyer-Kowalsky and Berry-Eberhard
+blocks of both engines.
+
+### 8.6 Effect on the reported example
+
+Rectangular 350x350, L=4000 double bending, 3+2+3 D16, D8 ties at 200 mm,
+N=500 kN — displacement ductility at the onset of buckling:
+
+| model | before | after |
+|---|---|---|
+| Moyer-Kowalsky | 1.07 | 1.20 |
+| Goodnight drift | *off the curve* | 4.19 |
+| Goodnight strain | 3.88 | 4.70 |
+| Berry-Eberhard | 4.82 | 4.82 |
+
+Three of the four models now agree within 15 %. Moyer-Kowalsky remains the
+outlier, and that is the model speaking rather than the code: at `s/db = 12.5`
+its critical strain is 0.0054, and the report now says so. The spread closes on
+its own as the detailing improves — at `s/db = 5` the four models land between
+4.4 and 5.7.
+
+### 8.7 Tests
+
+`tests/test_buckling_models.py` (11 tests) pins the invariants rather than the
+numbers: the drift limit must be invariant to the cantilever/fixed-fixed
+idealisation of the same column, every model written in terms of `rho_s` must
+be fed the same `rho_s`, and the growth strain must match the published
+interpolation. Each was checked to fail when its fix is reverted. The existing
+golden files record no buckling output, so none needed regenerating; all 152
+previous tests still pass unchanged.
