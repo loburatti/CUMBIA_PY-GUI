@@ -1,49 +1,64 @@
-Corrections to the bar buckling models, verified against the original MATLAB release, and a recommended onset in the report.
+The confinement clear distances are now read off the bar layout instead of the declared leg count, the section is checked for physical consistency before it is analysed, and a non-uniform bar layout can be described.
 
 ## What changes in your results
 
-**Analyses in double bending produce different buckling onsets.** Two of the four models were being fed the wrong quantities; the corrections move their predictions and, in some members, make a prediction appear where none was reported before. Single bending (cantilever) analyses are unaffected by the larger of the two fixes. Moment-curvature, the force-displacement backbone, plastic hinge lengths, shear capacity and the deformation limit states are untouched throughout — every fix below is confined to the buckling post-processing.
+**Rectangular sections only, and only through Mander's confinement.** `ncx` and `ncy` are untouched — they state the transverse steel area, which a leg contributes whether or not it hooks a longitudinal bar — so `rho_x`, `rho_y`, `rho_s` and all four buckling models are fed exactly what they were fed before. Moment-curvature, the force-displacement backbone, plastic hinge lengths, shear capacity and the deformation limit states are not touched at all. What moves is `sum(wi^2)`, and through it `ke`, `f'cc` and `ecu`.
 
-On the member that prompted this release — 350x350, L = 4000 in double bending, 3+2+3 D16, D8 ties at 200 mm, N = 500 kN — the displacement ductility at the onset of buckling moves like this:
+**A section detailed consistently is unchanged.** Where every declared leg can actually be placed — uniformly spaced bars, matching counts on opposite faces — the new calculation reproduces the old one exactly. The member the previous release was built around (350x350, L = 4000 in double bending, 3+2+3 D16, D8 ties at 200 mm, N = 500 kN) with `ncx = 3` and `ncy = 3` returns the same numbers to the last digit: three reinforcement layers give three restrained bars per side face, three bars per flange give three on the top and bottom, and every leg has a bar to hook.
 
-| model | before | after |
+Declare `ncx = 4` on those same bars and the previous release credited the section with confinement it did not have:
+
+| same column, `ncx = 4` | before | after |
 |---|---|---|
-| Moyer-Kowalsky | 1.07 | 1.20 |
-| Goodnight drift-based | *off the curve* | 4.19 |
-| Goodnight strain-based | 3.88 | 4.70 |
-| Berry-Eberhard | 4.82 | 4.82 |
+| nominal moment | 161.58 kN-m | 161.56 kN-m |
+| displacement ductility | 6.35 | 5.83 |
+| ultimate displacement | 0.2870 m | 0.2634 m |
 
-## Fixes
+`sum(wi^2)` for that section is 98568 mm², whatever leg count is declared, because the bars cannot host more than three restrained per face. The old calculation returned 77575 mm² at `ncx = 4` and 56581 mm² at `ncx = ncy = 4` — the more legs you claimed, the more confinement you were given, with no bar to hang them on.
 
-All four models were re-derived from the original MATLAB release and the *CUMBIA Theory and User Guide*. Moyer-Kowalsky and Berry-Eberhard turned out to be faithful ports — coefficients, signs and the use of the shear span all match. The defects were in the two Goodnight models, which exist only in the Python port and were never part of the peer-reviewed MATLAB release, plus one detail inherited from the MATLAB itself.
+Of the recorded regression cases, `rectangular_default` and both circular ones are unchanged to the last digit. `rectangular_crossties`, which declares four legs per direction on faces sharing a single intermediate bar position, moves -0.20 % on the nominal moment and -6.31 % on displacement ductility. Every departure is in the same direction: a larger `sum(wi^2)`, that is less confinement.
 
-**The Goodnight drift model used the member length as its aspect ratio.** The aspect ratio in CUMBIA is the shear span over the depth; Berry-Eberhard uses it correctly two lines above, and the shear model halves the length in double bending. Only this line did not. The result was a member that contradicted itself: a fixed-fixed column of length L and the cantilever of length L/2 it is equivalent to — the same physical column, and drift ratio is the same quantity in both idealisations — returned 6.41 % and 3.84 %. Since the model was calibrated on cantilevers, the double-bending branch was brought back to the single-bending one. Cantilevers are unaffected, and because both scripts ship with single bending, no shipped example ever exercised the broken branch.
+## Where the confinement was overstated
 
-**Both Goodnight models were fed half the transverse reinforcement ratio.** Their `rho_s` is the volumetric ratio; the rectangular engine passed the average of the two directions, while Berry-Eberhard on the adjacent line spelled the same quantity correctly. One definition now feeds all three, so they cannot drift apart again. Circular sections were already correct.
+Release 0.3 made the automatic `wi` depend on the number of transverse legs rather than on every peripheral bar, which was the right correction: Mander's effectiveness factor sums the clear distances between *restrained* bars, not between all of them. But it then assumed those restrained bars existed, evenly spread over the net core, whichever section had been typed in. The leg count and the bar layout never spoke to each other.
 
-**The Moyer-Kowalsky growth strain did not vanish at curvature ductility 1.** The Theory Guide requires zero there, interpolating linearly to its value at curvature ductility 4; the code followed a line through the origin instead, leaving a step and biasing the whole range in between — exactly where the crossing falls on poorly detailed sections. This is a deliberate departure from the MATLAB in favour of the documented model.
+The layout that exposed it has two bars on the top face and three on the bottom. Analysed with `ncy = 3`, the report gave four gaps of 111 mm. A crosstie is a straight bar: it can only hook where both faces it spans carry a bar at the same position, so on that section the third leg cannot be placed at all and the real geometry is a single 238 mm gap on each of those faces. Mander's first factor `1 - sum(wi^2)/(6*bc*dc)` falls from 0.838 to 0.686.
 
-**Report units.** `Curvature at Buckling` was labelled `m` instead of `1/m`, and `Moment for Buckling` `kN` instead of `kN-m`, in the Moyer-Kowalsky and Berry-Eberhard blocks of both engines.
+`section_geometry.py` now builds that geometry from the reinforcement matrix itself: where each bar sits, which face it belongs to, and which of them a leg can hold. The perimeter hoop restrains the four corners; each intermediate leg is placed on the bar nearest its ideal position among those that can receive it, and a leg with nowhere to go is not placed. `wi` is then the clear distance between consecutive *restrained* bars along each face, so an unrestrained bar is spanned rather than counted — which is what arching between laterally supported bars means.
 
-## Model applicability
+What the layout can hold is reported next to what was declared, in the preview and in the report, never substituted for it.
 
-The Moyer-Kowalsky critical strain collapses as the tie spacing grows — at `s/db = 12.5` it falls to 0.0054, predicting buckling almost at yield — and nothing in the report said so. The report now carries an applicability notes block, printed only when a note applies: a tie spacing outside the range the model was calibrated on, an allowable strain that turns negative, and, on rectangular sections, the extrapolation involved in applying a circular-column calibration to a rectangular core.
+## Describing a real bar layout
 
-## Recommended onset and governing mechanism
+The reinforcement table takes an optional **x positions** column (`50; 175; 300`), and `CUMBIA_RECT.py` an optional `custom_bar_x`, one entry per layer and `None` where the bars are evenly spaced. That is what makes a non-uniform layout describable: corner bars of one diameter and intermediate bars of another, or a bar placed specifically to receive a crosstie.
 
-The report listed the four models side by side and left the reader to choose. Each model that produces an onset is now classified against its own calibration — applicable, extrapolated, or excluded — and the lowest onset among those not excluded is highlighted as the recommended value.
+Bar positions do not enter the moment-curvature analysis, which reads the layer depth, bar count and diameter only. They decide where a crosstie can hook, and so the `wi`.
 
-Berry-Eberhard is the only model with a native rectangular calibration, so on a rectangular section the others are marked as extrapolated; on a circular section all three are native. Moyer-Kowalsky is excluded wherever `s/db > 8`.
+The preview draws the legs where they are actually placed, on the bars they hook, instead of at a fraction of the core. A ring marks each restrained bar. Red arrows outside a face are the `wi` that enter `ke`; amber arrows inside a face appear only where a bar is free, so the drawing shows both the bar spacing and the longer distance the confinement has to span.
 
-A recommended onset means nothing on a member that fails in shear first, so the block also compares it against the shear failure displacement and the ultimate deformation capacity and names which of the three actually limits the member. When bar buckling is not the governing mechanism, the caveat is printed inside the highlighted box.
+## Section consistency checks
 
-Neither the Theory Guide nor the source publications rank the models against each other, so this ranking is supplied by CUMBIA_PY as a decision aid and the report prints the rule in full. It is meant to be overridden where judgement requires. The figures are unchanged.
+The engine runs on almost anything: it reads numbers, not a section. The inputs are now read as a detailer would read them, live under the section editor and in the report under *Section consistency checks*, so a run from a script carries them too.
+
+**Errors** block a run and name what is wrong: non-positive dimensions, a cover that leaves no core, a tie spacing not larger than the tie itself, bars outside the cover, bars overlapping in a layer, a single reinforcement layer, and a `sum(wi^2)` that drives Mander's effectiveness factor to zero or below.
+
+**Warnings** cover a section that can be built but is not the one the numbers describe: legs the bar layout cannot hold, clear spacing too tight to place concrete through, a tie spacing beyond the `s <= 6 db` usually required in a plastic hinge region, a layer with nothing against a side face, confinement already eaten by the gaps, and `wi` entered by hand that disagrees with the layout drawn.
+
+**Advice** points at crossties the layout would allow and at a longitudinal steel ratio outside the range columns are usually detailed in.
+
+Nothing is corrected automatically. A check reports, the engineer decides, and the analysis runs on exactly what was entered.
+
+## Readability
+
+The preview callouts and the hover tooltips were hard to read on a large display. The five canvas label sizes go up, the tooltip to 16 pt, and both now go through one helper that applies the interface scaling factor — a `tk.Canvas` draws its own text and a tooltip is a bare `Toplevel`, so neither ever received it. A preview shown in a tall pane scales its callouts with the drawing.
+
+One defect the larger labels made obvious is fixed with them: a layer typed into the reinforcement table out of depth order was drawn as if it were the top or bottom one, producing a negative clear distance between layers and picking up the wrong extreme-fibre bar diameter.
 
 ## Testing
 
-The suite is now 171 tests, up from 152, running on Python 3.10 and 3.12 on every push. The nineteen new ones pin invariants rather than numbers: that the drift limit is the same whether a column is idealised as a cantilever or as a fixed-fixed member, that every model written in terms of `rho_s` is fed the same `rho_s`, that the growth strain matches the published interpolation, and that an excluded model never becomes the recommended value even when it is the lowest. Each was checked to fail when its fix is reverted.
+The suite is 270 tests, up from 171, running on Python 3.10 and 3.12 on every push. The new ones pin properties rather than numbers: that the restraint geometry reproduces the uniform-spacing formula wherever both descriptions of a section are true at once, that a leg the layout cannot host never improves the confinement, that a crosstie is drawn on a bar or not drawn at all, and that every consistency check is reachable from a section written for it and sayable in both interface languages.
 
-The golden regression files record no buckling output, so none needed regenerating and the 152 previous tests pass unchanged.
+`tests/golden/rectangular_crossties.json` was re-recorded; its diff is the table above. The other three golden files are untouched.
 
 ## Download
 
