@@ -4,9 +4,9 @@ The confinement clear distances are now read off the bar layout instead of the d
 
 **Rectangular sections only, and only through Mander's confinement.** `ncx` and `ncy` are untouched — they state the transverse steel area, which a leg contributes whether or not it hooks a longitudinal bar — so `rho_x`, `rho_y`, `rho_s` and all four buckling models are fed exactly what they were fed before. Moment-curvature, the force-displacement backbone, plastic hinge lengths, shear capacity and the deformation limit states are not touched at all. What moves is `sum(wi^2)`, and through it `ke`, `f'cc` and `ecu`.
 
-**A section detailed consistently is unchanged.** Where every declared leg can actually be placed — uniformly spaced bars, matching counts on opposite faces — the new calculation reproduces the old one exactly. The member the previous release was built around (350x350, L = 4000 in double bending, 3+2+3 D16, D8 ties at 200 mm, N = 500 kN) with `ncx = 3` and `ncy = 3` returns the same numbers to the last digit: three reinforcement layers give three restrained bars per side face, three bars per flange give three on the top and bottom, and every leg has a bar to hook.
+**A section detailed consistently is unchanged.** Where every declared leg can actually be placed — uniformly spaced bars, matching counts on opposite faces — the new calculation reproduces the old one exactly. The reference member this work has been built around since 0.3.4 (350x350, L = 4000 in double bending, 3+2+3 D16, D8 ties at 200 mm, N = 500 kN) with `ncx = 3` and `ncy = 3` returns the same numbers to the last digit: three reinforcement layers give three restrained bars per side face, three bars per flange give three on the top and bottom, and every leg has a bar to hook.
 
-Declare `ncx = 4` on those same bars and the previous release credited the section with confinement it did not have:
+Declare `ncx = 4` on those same bars and the previous calculation credited the section with confinement it did not have:
 
 | same column, `ncx = 4` | before | after |
 |---|---|---|
@@ -17,6 +17,19 @@ Declare `ncx = 4` on those same bars and the previous release credited the secti
 `sum(wi^2)` for that section is 98568 mm², whatever leg count is declared, because the bars cannot host more than three restrained per face. The old calculation returned 77575 mm² at `ncx = 4` and 56581 mm² at `ncx = ncy = 4` — the more legs you claimed, the more confinement you were given, with no bar to hang them on.
 
 Of the recorded regression cases, `rectangular_default` and both circular ones are unchanged to the last digit. `rectangular_crossties`, which declares four legs per direction on faces sharing a single intermediate bar position, moves -0.20 % on the nominal moment and -6.31 % on displacement ductility. Every departure is in the same direction: a larger `sum(wi^2)`, that is less confinement.
+
+## Also included, if you are coming from v0.3.3
+
+The bar buckling work of 0.3.4 was merged but never released, so this build is the first to carry it. All four buckling models were re-derived from the original MATLAB release and the *CUMBIA Theory and User Guide*: Moyer-Kowalsky and Berry-Eberhard turned out to be faithful ports, and the defects were in the two Goodnight models, which exist only in the Python port.
+
+- The **Goodnight drift model** used the member length as its aspect ratio instead of the shear span, so a fixed-fixed column and the cantilever it is equivalent to returned drift limits differing by 67 %. Cantilevers were unaffected.
+- **Both Goodnight models** were fed half the transverse reinforcement ratio. One definition of the volumetric ratio now feeds them and Berry-Eberhard alike. Circular sections were already correct.
+- The **Moyer-Kowalsky growth strain** did not vanish at curvature ductility 1 as the Theory Guide requires, biasing the whole range up to curvature ductility 4.
+- Two **report unit labels** in the buckling blocks were wrong: `m` for a curvature, `kN` for a moment.
+
+Each model that produces an onset is now classified against its own calibration — applicable, extrapolated or excluded — and the report highlights the lowest onset among those not excluded, then states whether bar buckling, shear failure or the ultimate deformation capacity actually limits the member. That ranking is supplied by CUMBIA_PY as a decision aid; the source publications do not rank the models against each other, so the rule is printed in full and is meant to be overridden where judgement requires.
+
+Sections 8 and 9 of [CHANGES.md](https://github.com/loburatti/CUMBIA_PY-GUI/blob/master/CHANGES.md) carry the derivations and the before-and-after figures for each model.
 
 ## Where the confinement was overstated
 
