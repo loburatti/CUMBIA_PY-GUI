@@ -21,20 +21,25 @@ from tests.conftest import run_engine
 
 AUTO_MLR = [[52.7, 4, 25.4], [150.9, 2, 25.4], [249.1, 2, 25.4], [347.3, 4, 25.4]]
 CUSTOM_MLR = [[52.7, 3, 25.4], [102.0, 2, 22.2], [200.0, 2, 19.0], [349.0, 3, 22.2]]
+# a face that cannot host every declared leg, and a layout with typed positions
+SHORT_MLR = [[48.0, 2, 16.0], [175.0, 2, 16.0], [302.0, 3, 16.0]]
+PLACED_X = [[52.7, 90.0, 210.0, 247.3], None, None, [52.7, 90.0, 210.0, 247.3]]
 
-# (label, MLR, B, H, clb, ncx, ncy)
+# (label, MLR, B, H, clb, ncx, ncy, bar_x)
 CASES = [
-    ('uniform-2x2', AUTO_MLR, 300.0, 400.0, 40.0, 2, 2),
-    ('uniform-2x4', AUTO_MLR, 300.0, 400.0, 40.0, 2, 4),
-    ('uniform-3x4', AUTO_MLR, 300.0, 400.0, 40.0, 3, 4),
-    ('uniform-4x4', AUTO_MLR, 300.0, 400.0, 40.0, 4, 4),
-    ('custom-2x2', CUSTOM_MLR, 350.0, 400.0, 40.0, 2, 2),
-    ('custom-3x3', CUSTOM_MLR, 350.0, 400.0, 40.0, 3, 3),
-    ('single-layer', [[200.0, 4, 25.4]], 300.0, 400.0, 40.0, 2, 2),
+    ('uniform-2x2', AUTO_MLR, 300.0, 400.0, 40.0, 2, 2, None),
+    ('uniform-2x4', AUTO_MLR, 300.0, 400.0, 40.0, 2, 4, None),
+    ('uniform-3x4', AUTO_MLR, 300.0, 400.0, 40.0, 3, 4, None),
+    ('uniform-4x4', AUTO_MLR, 300.0, 400.0, 40.0, 4, 4, None),
+    ('custom-2x2', CUSTOM_MLR, 350.0, 400.0, 40.0, 2, 2, None),
+    ('custom-3x3', CUSTOM_MLR, 350.0, 400.0, 40.0, 3, 3, None),
+    ('legs-without-bars', SHORT_MLR, 350.0, 350.0, 40.0, 4, 3, None),
+    ('typed-positions', AUTO_MLR, 300.0, 400.0, 40.0, 3, 3, PLACED_X),
+    ('single-layer', [[200.0, 4, 25.4]], 300.0, 400.0, 40.0, 2, 2, None),
 ]
 
 
-def wi_from_gui(gui, mlr, B, H, clb, ncx, ncy):
+def wi_from_gui(gui, mlr, B, H, clb, ncx, ncy, bar_x=None):
     """Call the real GUI method with a stand-in for the widget state.
 
     Built with CumbiaApp.__new__ rather than a bare class so that the helper
@@ -54,27 +59,31 @@ def wi_from_gui(gui, mlr, B, H, clb, ncx, ncy):
     app._v_ncx = _V(ncx)
     app._v_ncy = _V(ncy)
 
-    wi = list(gui.CumbiaApp._compute_wi_mander(app, [list(r) for r in mlr]))
+    wi = list(gui.CumbiaApp._compute_wi_mander(app, [list(r) for r in mlr], bar_x))
     assert wi, 'the GUI returned no wi — the stand-in is probably incomplete'
     return wi
 
 
-def wi_from_engine(mlr, B, H, clb, ncx, ncy):
+def wi_from_engine(mlr, B, H, clb, ncx, ncy, bar_x=None):
     """Run CUMBIA_RECT.py through its wi_input == [0] auto branch."""
-    ns = run_engine('rectangular', {
+    params = {
         'name': 'wi_probe', 'interaction': 'n',
         'B': B, 'H': H, 'clb': clb, 'ncx': ncx, 'ncy': ncy,
         'auto_generate_MLR': False, 'custom_MLR': [list(r) for r in mlr],
         'wi_input': [0],
-    })
+    }
+    if bar_x is not None:
+        params['custom_bar_x'] = bar_x
+    ns = run_engine('rectangular', params)
     return list(np.asarray(ns['wi'], dtype=float))
 
 
-@pytest.mark.parametrize('label,mlr,B,H,clb,ncx,ncy', CASES, ids=[c[0] for c in CASES])
-def test_gui_and_engine_agree_on_wi(gui, label, mlr, B, H, clb, ncx, ncy):
+@pytest.mark.parametrize('label,mlr,B,H,clb,ncx,ncy,bar_x', CASES,
+                         ids=[c[0] for c in CASES])
+def test_gui_and_engine_agree_on_wi(gui, label, mlr, B, H, clb, ncx, ncy, bar_x):
     """The two implementations must produce identical wi arrays."""
-    from_gui = wi_from_gui(gui, mlr, B, H, clb, ncx, ncy)
-    from_engine = wi_from_engine(mlr, B, H, clb, ncx, ncy)
+    from_gui = wi_from_gui(gui, mlr, B, H, clb, ncx, ncy, bar_x)
+    from_engine = wi_from_engine(mlr, B, H, clb, ncx, ncy, bar_x)
 
     assert len(from_gui) == len(from_engine), (
         f'{label}: GUI produced {len(from_gui)} gaps, '
@@ -84,10 +93,11 @@ def test_gui_and_engine_agree_on_wi(gui, label, mlr, B, H, clb, ncx, ncy):
         f'{np.round(from_engine, 4)}')
 
 
-@pytest.mark.parametrize('label,mlr,B,H,clb,ncx,ncy', CASES, ids=[c[0] for c in CASES])
-def test_wi_gaps_are_physically_possible(gui, label, mlr, B, H, clb, ncx, ncy):
+@pytest.mark.parametrize('label,mlr,B,H,clb,ncx,ncy,bar_x', CASES,
+                         ids=[c[0] for c in CASES])
+def test_wi_gaps_are_physically_possible(gui, label, mlr, B, H, clb, ncx, ncy, bar_x):
     """Every clear distance must be positive and fit inside the core."""
-    wi = wi_from_gui(gui, mlr, B, H, clb, ncx, ncy)
+    wi = wi_from_gui(gui, mlr, B, H, clb, ncx, ncy, bar_x)
     assert wi, f'{label}: no wi produced'
     assert all(w > 0 for w in wi), f'{label}: non-positive gap in {wi}'
     largest = max(B - 2 * clb, H - 2 * clb)
@@ -95,13 +105,23 @@ def test_wi_gaps_are_physically_possible(gui, label, mlr, B, H, clb, ncx, ncy):
         f'{label}: gap {max(wi):.1f} exceeds the core dimension {largest:.1f}')
 
 
-def test_wi_count_follows_the_number_of_stirrup_legs(gui):
+def test_wi_count_follows_the_bars_the_legs_can_hold(gui):
     """Mander counts one gap per pair of adjacent restrained bars, on four
-    faces: 2*(ncy-1) on top/bottom plus 2*(ncx-1) on the sides."""
-    for ncx, ncy in [(2, 2), (2, 4), (3, 4), (4, 4), (5, 3)]:
+    faces. A leg holds a bar only where there is one: AUTO_MLR carries four
+    bars per face, so beyond four legs the count stops growing."""
+    for ncx, ncy in [(2, 2), (2, 4), (3, 4), (4, 4), (5, 3), (6, 6)]:
         wi = wi_from_gui(gui, AUTO_MLR, 300.0, 400.0, 40.0, ncx, ncy)
-        expected = 2 * (max(ncy, 2) - 1) + 2 * (max(ncx, 2) - 1)
+        expected = 2 * (min(max(ncy, 2), 4) - 1) + 2 * (min(max(ncx, 2), 4) - 1)
         assert len(wi) == expected, f'ncx={ncx} ncy={ncy}: {len(wi)} != {expected}'
+
+
+def test_the_engine_reads_typed_bar_positions(gui):
+    """custom_bar_x must survive the JSON round trip into the engine: it is
+    the one nested list that may not be turned into a numpy matrix."""
+    uniform = wi_from_engine(AUTO_MLR, 300.0, 400.0, 40.0, 3, 3)
+    typed = wi_from_engine(AUTO_MLR, 300.0, 400.0, 40.0, 3, 3, PLACED_X)
+    assert not np.allclose(sorted(uniform), sorted(typed)), (
+        'the engine ignored the typed bar positions')
 
 
 def test_more_legs_means_tighter_gaps(gui):
@@ -148,21 +168,21 @@ def test_wi_enters_confinement_through_sum_of_squares():
 
 
 # ------------------------------------------------ single source of truth ----
-def test_both_callers_delegate_to_material_models(gui):
-    """GUI and engine must both go through material_models.wi_mander.
+def test_both_callers_delegate_to_the_shared_geometry(gui):
+    """GUI and engine must both go through section_geometry.wi_mander.
 
     If either grows its own copy of the formula again, the values may still
     agree on the day it is written and drift later; this checks the shared
     function is what actually produces them.
     """
-    import material_models as mm
+    import section_geometry as sg
 
-    for label, mlr, B, H, clb, ncx, ncy in CASES:
-        shared = list(np.asarray(mm.wi_mander(mlr, B, H, clb, ncx, ncy), float))
-        assert wi_from_gui(gui, mlr, B, H, clb, ncx, ncy) == pytest.approx(shared), (
-            f'{label}: the GUI no longer matches material_models.wi_mander')
-        assert wi_from_engine(mlr, B, H, clb, ncx, ncy) == pytest.approx(shared), (
-            f'{label}: the engine no longer matches material_models.wi_mander')
+    for label, mlr, B, H, clb, ncx, ncy, bar_x in CASES:
+        shared = list(np.asarray(sg.wi_mander(mlr, B, H, clb, ncx, ncy, bar_x), float))
+        assert wi_from_gui(gui, mlr, B, H, clb, ncx, ncy, bar_x) == pytest.approx(shared), (
+            f'{label}: the GUI no longer matches section_geometry.wi_mander')
+        assert wi_from_engine(mlr, B, H, clb, ncx, ncy, bar_x) == pytest.approx(shared), (
+            f'{label}: the engine no longer matches section_geometry.wi_mander')
 
 
 def test_the_wi_formula_appears_only_once_in_the_sources():
@@ -172,15 +192,16 @@ def test_the_wi_formula_appears_only_once_in_the_sources():
 
     from tests.conftest import REPO_ROOT
 
-    # the distinctive term of the Mander gap formula
-    pattern = re.compile(r'Bnet\s*-\s*n_restrained_tb|Bnet\s*-\s*n_tb\s*\*')
+    # the distinctive term of the clear-distance formula
+    pattern = re.compile(r'\(a\.dbl \+ b\.dbl\) / 2')
     hits = []
-    for name in ('main.py', 'CUMBIA_RECT.py', 'material_models.py'):
+    for name in ('main.py', 'CUMBIA_RECT.py', 'material_models.py',
+                 'section_geometry.py'):
         src = open(os.path.join(REPO_ROOT, name), encoding='utf-8').read()
         if pattern.search(src):
             hits.append(name)
-    assert hits == ['material_models.py'], (
-        f'the wi formula should live only in material_models.py, found in {hits}')
+    assert hits == ['section_geometry.py'], (
+        f'the wi formula should live only in section_geometry.py, found in {hits}')
 
 
 def test_gui_returns_plain_floats_for_the_parameter_file(gui):
@@ -195,9 +216,9 @@ def test_gui_returns_plain_floats_for_the_parameter_file(gui):
 def test_engine_default_uses_the_automatic_calculation():
     """CUMBIA_RECT.py ships wi_input = [0], so script mode and GUI mode
     analyse the same section with the same confinement."""
-    import material_models as mm
+    import section_geometry as sg
 
     ns = run_engine('rectangular', {'name': 'wi_default', 'interaction': 'n'})
-    expected = mm.wi_mander(ns['MLR'], ns['B'], ns['H'], ns['clb'],
-                            ns['ncx'], ns['ncy'])
+    expected = sg.wi_mander(ns['MLR'], ns['B'], ns['H'], ns['clb'],
+                            ns['ncx'], ns['ncy'], ns['MLR_X'])
     assert np.allclose(np.asarray(ns['wi'], float), expected)

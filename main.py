@@ -1,5 +1,5 @@
 """
-CUMBIA_PY 0.3.4 - Advanced GUI Launcher
+CUMBIA_PY 0.3.5 - Advanced GUI Launcher
 CustomTkinter interface with interactive section editor.
 """
 import os
@@ -16,6 +16,8 @@ import customtkinter as ctk
 import numpy as np
 from i18n import T, get_tips, get_lang, set_lang, save_preference
 import material_models as mm
+import section_geometry as sg
+import section_checks as sc
 
 # PyInstaller: analysis scripts import these at runtime via exec(),
 # so we import them here to ensure they are bundled.
@@ -204,10 +206,118 @@ RECT_LABELS.update({
 
 
 # ==========================================================================
+# Font scaling
+# ==========================================================================
+def scaled_font_size(widget, size):
+    """`size` points corrected for the interface scaling factor.
+
+    Raw tk widgets (canvas text, tooltips) are not covered by CustomTkinter's
+    widget scaling, so on a scaled display they came out smaller than
+    everything around them. Reading the same factor keeps them in proportion;
+    if it cannot be read, the unscaled size is used.
+    """
+    try:
+        factor = ctk.ScalingTracker.get_widget_scaling(widget)
+    except Exception:
+        factor = 1.0
+    if not isinstance(factor, (int, float)) or factor <= 0:
+        factor = 1.0
+    return max(int(round(size * factor)), size)
+
+
+# Consistency findings, by severity: (dark mode, light mode)
+SEVERITY_COLOURS = {
+    sc.ERROR:   ('#ff6b6b', '#c00000'),
+    sc.WARNING: ('#e8a838', '#b06a00'),
+    sc.ADVICE:  ('#7fb3ff', '#1d5fb4'),
+}
+SEVERITY_LABELS = {sc.ERROR: 'sev_error', sc.WARNING: 'sev_warning',
+                   sc.ADVICE: 'sev_advice'}
+
+
+def finding_text(finding):
+    """A finding in the interface language.
+
+    section_checks owns the English wording, so it is the one copy the report
+    prints and the tests read; i18n carries the translations under
+    check_<code> and falls back to the English template when one is missing.
+    """
+    key = f'check_{finding.code}'
+    template = T(key)
+    if template == key:
+        template = sc.TEMPLATES[finding.code]
+    try:
+        return template.format(**finding.params)
+    except (KeyError, IndexError, ValueError):
+        return sc.TEMPLATES[finding.code].format(**finding.params)
+
+
+def parse_bar_x(text):
+    """Numbers out of a free-text list, separated by a comma or a semicolon.
+
+    Returns [] for anything that does not parse, so a half-typed entry falls
+    back to the default behaviour of its field instead of raising while the
+    user is still typing.
+    """
+    if not text:
+        return []
+    values = []
+    for token in str(text).replace(';', ',').split(','):
+        token = token.strip()
+        if not token:
+            continue
+        try:
+            values.append(float(token))
+        except ValueError:
+            return []
+    return values
+
+
+def format_bar_x(values):
+    """The inverse of parse_bar_x, for filling the table from a saved file."""
+    if not values:
+        return ''
+    return '; '.join(f'{float(v):g}' for v in values)
+
+
+def sorted_layers(mlr, bar_x=None):
+    """Reinforcement layers ordered from the top face down, positions included.
+
+    A layer can be typed into the table in any order, but everything
+    downstream reads MLR[0] as the top face and MLR[-1] as the bottom one:
+    the engine sorts the matrix before using it, and the preview needs the
+    same order to draw a gap between the right pair of layers. Sorting a
+    working copy here keeps a row typed out of sequence from producing a
+    negative clear distance or the wrong extreme-fibre bar diameter, without
+    reshuffling the table under the cursor while it is being edited.
+
+    The explicit bar positions travel with their row, so the two lists stay
+    parallel; a row whose numbers cannot be read is dropped from both.
+    """
+    rows = []
+    for i, layer in enumerate(mlr):
+        try:
+            row = [float(layer[0]), int(layer[1]), float(layer[2])]
+        except (TypeError, ValueError, IndexError):
+            continue
+        xs = bar_x[i] if bar_x is not None and i < len(bar_x) else None
+        rows.append((row, xs))
+    rows.sort(key=lambda r: r[0][0])
+    positions = [xs for _, xs in rows]
+    return [row for row, _ in rows], (positions if any(positions) else None)
+
+
+# ==========================================================================
 # Tooltip widget
 # ==========================================================================
 class Tip:
     """Hover tooltip for any widget."""
+
+    # A tooltip is a plain tk.Toplevel, so CustomTkinter's widget scaling does
+    # not reach it; scaled_font_size applies the same factor the rest of the
+    # interface uses. Change this one number to resize every tooltip.
+    SIZE = 16
+
     def __init__(self, widget, text):
         self.widget = widget
         self.text = text
@@ -224,10 +334,12 @@ class Tip:
         tw.wm_overrideredirect(True)
         tw.wm_geometry(f'+{x}+{y}')
         tw.wm_attributes('-topmost', True)
+        size = scaled_font_size(self.widget, self.SIZE)
         lbl = tk.Label(tw, text=self.text, justify='left',
                        background='#333', foreground='#eee',
                        relief='solid', borderwidth=1,
-                       font=('Segoe UI', 13), wraplength=480, padx=10, pady=7)
+                       font=('Segoe UI', size),
+                       wraplength=int(44 * size), padx=12, pady=9)
         lbl.pack()
 
     def _hide(self, _event=None):
@@ -256,11 +368,17 @@ class SectionCanvas(tk.Canvas):
 
     # Drawing label sizes, in points before scaling. Adjust here: every label
     # in the preview derives from these five numbers.
-    S_DIM      = 13      # H, B and the D callout
-    S_DIM_SM   = 11      # the tighter cover callout
-    S_INFO     = 13      # the ncx / ncy / s block
-    S_WI       = 11      # bar-to-bar gaps
-    S_WI_CONF  = 11      # Mander restrained-bar gaps
+    S_DIM      = 18      # H, B and the D callout
+    S_DIM_SM   = 15      # the tighter cover callout
+    S_INFO     = 17      # the ncx / ncy / s block
+    S_WI       = 15      # bar-to-bar gaps
+    S_WI_CONF  = 15      # Mander restrained-bar gaps
+
+    # Reference canvas height the sizes above are written for. A preview shown
+    # in a taller pane grows its labels with it, up to CANVAS_ZOOM_MAX; a
+    # smaller pane never shrinks them below the sizes above.
+    CANVAS_REF_H  = 420
+    CANVAS_ZOOM_MAX = 1.5
 
     def __init__(self, parent, **kw):
         kw.setdefault('highlightthickness', 0)
@@ -274,21 +392,18 @@ class SectionCanvas(tk.Canvas):
         return pair[0] if self._dark else pair[1]
 
     def _font(self, size, bold=False):
-        """A canvas font that follows the interface scaling.
+        """A canvas font that follows the interface scaling and the pane size.
 
-        A tk.Canvas draws its own text and is not covered by CustomTkinter's
-        widget scaling, so on a scaled display these labels came out smaller
-        than every other element on screen. Reading the same factor keeps
-        them in proportion; if it cannot be read, the unscaled size is used.
+        Two corrections on top of the declared point size: the CustomTkinter
+        scaling factor, which a tk.Canvas does not get on its own, and a zoom
+        for a preview pane taller than CANVAS_REF_H, so the callouts stay
+        readable next to a section drawn several hundred pixels tall.
         """
-        try:
-            factor = ctk.ScalingTracker.get_widget_scaling(self)
-        except Exception:
-            factor = 1.0
-        if not isinstance(factor, (int, float)) or factor <= 0:
-            factor = 1.0
-        scaled = max(int(round(size * factor)), size)
-        return ('Segoe UI', scaled, 'bold') if bold else ('Segoe UI', scaled)
+        ch = self.winfo_height() or self.CANVAS_REF_H
+        zoom = min(max(ch / self.CANVAS_REF_H, 1.0), self.CANVAS_ZOOM_MAX)
+        return (('Segoe UI', scaled_font_size(self, int(round(size * zoom))), 'bold')
+                if bold else
+                ('Segoe UI', scaled_font_size(self, int(round(size * zoom)))))
 
     @property
     def F_DIM(self):
@@ -349,7 +464,7 @@ class SectionCanvas(tk.Canvas):
 
         cw = self.winfo_width() or 400
         ch = self.winfo_height() or 400
-        margin = 50
+        margin = 62
         R = D / 2
         sc = min((cw - 2 * margin) / D, (ch - 2 * margin) / D)
         cx, cy = cw / 2, ch / 2
@@ -399,7 +514,7 @@ class SectionCanvas(tk.Canvas):
         mlr = p.get('_mlr', [])
         wi_mander = p.get('_wi_mander', [])
 
-        sc, ox, oy = self._scale_rect(H, B, margin=55)
+        sc, ox, oy = self._scale_rect(H, B, margin=96)
 
         def xy(xm, ym):
             return ox + xm * sc, oy + ym * sc
@@ -421,129 +536,96 @@ class SectionCanvas(tk.Canvas):
         self.create_rectangle(cx0, cy0, cx1, cy1,
                               outline=self._c(self.C_STIRRUP), dash=(6, 4), width=2)
 
-        # 4 - stirrup legs
-        # ncx = horizontal legs (parallel to B) → draw as horizontal crossties along H
-        # ncy = vertical legs (parallel to H) → draw as vertical crossties along B
-        Hcore = H - 2 * d_core
-        Bcore = B - 2 * d_core
-        if ncx > 2:
-            for i in range(1, ncx - 1):
-                frac = i / (ncx - 1)
-                ly = d_core + frac * Hcore
-                lx0, ly0 = xy(d_core, ly)
-                lx1, ly1 = xy(B - d_core, ly)
-                self.create_line(lx0, ly0, lx1, ly1,
-                                 fill=self._c(self.C_LEG), width=1, dash=(4, 3))
-        if ncy > 2:
-            for i in range(1, ncy - 1):
-                frac = i / (ncy - 1)
-                lx = d_core + frac * Bcore
-                lx0, ly0 = xy(lx, d_core)
-                lx1, ly1 = xy(lx, H - d_core)
-                self.create_line(lx0, ly0, lx1, ly1,
-                                 fill=self._c(self.C_LEG), width=1, dash=(4, 3))
+        # 4 - transverse legs, drawn where they can actually hook a bar
+        layout = p.get('_layout') or sg.restrained_layout(
+            mlr, B, H, clb, ncx, ncy, p.get('_bar_x'))
+        for depth in layout['tie_y']:          # legs parallel to B
+            lx0, ly0 = xy(d_core, depth)
+            lx1, ly1 = xy(B - d_core, depth)
+            self.create_line(lx0, ly0, lx1, ly1,
+                             fill=self._c(self.C_LEG), width=1, dash=(4, 3))
+        for x_leg in layout['tie_x']:          # legs parallel to H
+            lx0, ly0 = xy(x_leg, d_core)
+            lx1, ly1 = xy(x_leg, H - d_core)
+            self.create_line(lx0, ly0, lx1, ly1,
+                             fill=self._c(self.C_LEG), width=1, dash=(4, 3))
 
-        # 5 - longitudinal bars
-        bar_positions = []
-        for layer in mlr:
-            depth, n_bars, diam = float(layer[0]), int(layer[1]), float(layer[2])
-            r_bar = max(3, diam / 2 * sc)
-            if n_bars == 1:
-                xs = [B / 2]
-            else:
-                edge = clb + diam / 2
-                xs = list(np.linspace(edge, B - edge, n_bars))
-            for xb in xs:
-                bxc, byc = xy(xb, depth)
+        # 5 - longitudinal bars; a ring marks a bar the transverse steel holds
+        held = {(round(b.x, 3), round(b.y, 3))
+                for face in layout['faces'].values() for b in face if b.restrained}
+        for layer in sg.section_layers(mlr, B, clb, p.get('_bar_x')):
+            r_bar = max(3, layer['dbl'] / 2 * sc)
+            for xb in layer['x']:
+                bxc, byc = xy(xb, layer['depth'])
                 self.create_oval(bxc - r_bar, byc - r_bar, bxc + r_bar, byc + r_bar,
                                  fill=self._c(self.C_BAR), outline='')
-                bar_positions.append((xb, depth, diam))
+                if (round(xb, 3), round(layer['depth'], 3)) in held:
+                    self.create_oval(bxc - r_bar - 3, byc - r_bar - 3,
+                                     bxc + r_bar + 3, byc + r_bar + 3,
+                                     outline=self._c(self.C_LEG), width=2)
 
-        # 6a - wi arrows (orange): gaps between ALL bars
-        if len(mlr) > 0:
-            top_n = int(mlr[0][1])
-            top_diam = float(mlr[0][2])
-            if top_n > 1:
-                edge = clb + top_diam / 2
-                top_xs = list(np.linspace(edge, B - edge, top_n))
-                top_gap = (B - 2 * clb - top_n * top_diam) / (top_n - 1)
-                for j in range(len(top_xs) - 1):
-                    ax0, ay0 = xy(top_xs[j] + top_diam / 2, float(mlr[0][0]))
-                    ax1, ay1 = xy(top_xs[j + 1] - top_diam / 2, float(mlr[0][0]))
-                    if ax1 > ax0 + 8:
-                        self.create_line(ax0, ay0 - 4, ax1, ay1 - 4,
-                                         fill=self._c(self.C_WI), arrow='both', width=1)
-                        self.create_text((ax0 + ax1) / 2, ay0 - 14,
-                                         text=f'{top_gap:.0f}',
-                                         fill=self._c(self.C_WI), font=self.F_WI)
+        # 6 - clear distances, one reading per face
+        #   red   : between the bars the transverse steel holds. These are the
+        #           wi that Mander's ke is built from, drawn outside the face.
+        #   amber : between adjacent bars, drawn inside the face and only where
+        #           a bar is free, so the picture shows both the bar spacing
+        #           and the longer distance the confinement has to span.
+        f_conf, f_bar = self.F_WI_CONF, self.F_WI
+        step_conf, step_bar = f_conf[1], f_bar[1]
 
-            for j in range(len(mlr) - 1):
-                dep0, _, d0 = float(mlr[j][0]), int(mlr[j][1]), float(mlr[j][2])
-                dep1, _, d1 = float(mlr[j + 1][0]), int(mlr[j + 1][1]), float(mlr[j + 1][2])
-                side_gap = dep1 - dep0 - (d0 + d1) / 2
-                ax0, ay0 = xy(B + 8 / sc, dep0 + d0 / 2)
-                ax1, ay1 = xy(B + 8 / sc, dep1 - d1 / 2)
-                if ay1 > ay0 + 8:
-                    self.create_line(ax0, ay0, ax1, ay1,
-                                     fill=self._c(self.C_WI), arrow='both', width=1)
-                    self.create_text(ax0 + 16, (ay0 + ay1) / 2,
-                                     text=f'{side_gap:.0f}',
-                                     fill=self._c(self.C_WI), font=self.F_WI)
+        def h_arrow(a, b, value, off, color, font, step):
+            ax0, ay0 = xy(a.x + a.dbl / 2, a.y)
+            ax1, _ = xy(b.x - b.dbl / 2, b.y)
+            if ax1 <= ax0 + 8:
+                return
+            self.create_line(ax0, ay0 + off, ax1, ay0 + off,
+                             fill=color, arrow='both', width=1)
+            away = step if off > 0 else -step
+            self.create_text((ax0 + ax1) / 2, ay0 + off + away,
+                             text=f'{value:.0f}', fill=color, font=font)
 
-        # 6b - wi Mander arrows (red): gaps between RESTRAINED bars only
-        if len(mlr) > 0:
-            n_tb = max(ncy, 2)
-            n_sd = max(ncx, 2)
-            avg_dbl_tb = (float(mlr[0][2]) + float(mlr[-1][2])) / 2
-            avg_dbl_side = sum(float(r[2]) for r in mlr) / len(mlr)
-            # gap values come from the shared calculation; only the arrow
-            # geometry below is specific to the drawing
-            wi_conf = mm.wi_mander(mlr, B, H, clb, ncx, ncy)
+        def v_arrow(a, b, value, x_mm, off, color, font, step):
+            ax0, ay0 = xy(x_mm, a.y + a.dbl / 2)
+            _, ay1 = xy(x_mm, b.y - b.dbl / 2)
+            if ay1 <= ay0 + 8:
+                return
+            self.create_line(ax0 + off, ay0, ax0 + off, ay1,
+                             fill=color, arrow='both', width=1)
+            away = step if off > 0 else -step
+            self.create_text(ax0 + off + away, (ay0 + ay1) / 2,
+                             text=f'{value:.0f}', fill=color, font=font, angle=90)
 
-            # top face restrained bars
-            if n_tb > 1:
-                wi_conf_tb = float(wi_conf[0])
-                edge_r = clb + avg_dbl_tb / 2
-                xs_r = list(np.linspace(edge_r, B - edge_r, n_tb))
-                top_depth = float(mlr[0][0])
-                for j in range(len(xs_r) - 1):
-                    ax0, ay0 = xy(xs_r[j] + avg_dbl_tb / 2, top_depth)
-                    ax1, ay1 = xy(xs_r[j + 1] - avg_dbl_tb / 2, top_depth)
-                    if ax1 > ax0 + 8:
-                        self.create_line(ax0, ay0 + 8, ax1, ay1 + 8,
-                                         fill=self._c(self.C_WI_CONF), arrow='both', width=1)
-                        self.create_text((ax0 + ax1) / 2, ay0 + 18,
-                                         text=f'{wi_conf_tb:.0f}',
-                                         fill=self._c(self.C_WI_CONF), font=self.F_WI_CONF)
+        # top and bottom faces: horizontal arrows above and below the section
+        for name, outward in (('top', -12), ('bottom', 12)):
+            face = layout['faces'][name]
+            for a, b, value in layout['gaps'][name]:
+                h_arrow(a, b, value, outward, self._c(self.C_WI_CONF), f_conf, step_conf)
+            if any(not bar.restrained for bar in face):
+                for a, b, value in sg.clear_gaps(face, 'x'):
+                    h_arrow(a, b, value, -outward, self._c(self.C_WI), f_bar, step_bar)
 
-            # left side restrained bars
-            if n_sd > 1:
-                wi_conf_sd = float(wi_conf[-1])
-                edge_v = clb + avg_dbl_side / 2
-                ys_r = list(np.linspace(edge_v, H - edge_v, n_sd))
-                for j in range(len(ys_r) - 1):
-                    ax0, ay0 = xy(-20 / sc, ys_r[j] + avg_dbl_side / 2)
-                    ax1, ay1 = xy(-20 / sc, ys_r[j + 1] - avg_dbl_side / 2)
-                    if ay1 > ay0 + 8:
-                        self.create_line(ax0, ay0, ax1, ay1,
-                                         fill=self._c(self.C_WI_CONF), arrow='both', width=1)
-                        self.create_text(ax0 - 14, (ay0 + ay1) / 2,
-                                         text=f'{wi_conf_sd:.0f}',
-                                         fill=self._c(self.C_WI_CONF), font=self.F_WI_CONF,
-                                         angle=90)
+        # side faces: vertical arrows, at the face they describe
+        for name, x_mm, outward in (('left', 0.0, -12), ('right', B, 12)):
+            face = layout['faces'][name]
+            for a, b, value in layout['gaps'][name]:
+                v_arrow(a, b, value, x_mm, outward, self._c(self.C_WI_CONF), f_conf, step_conf)
+            if any(not bar.restrained for bar in face):
+                for a, b, value in sg.clear_gaps(face, 'y'):
+                    v_arrow(a, b, value, x_mm, -outward, self._c(self.C_WI), f_bar, step_bar)
 
-        # 7 - dimension labels
+        # 7 - dimension labels, outside the gap arrows
+        step_dim = self.F_DIM[1]
         # H (left)
-        hx0, hy0 = xy(-40 / sc, 0)
-        hx1, hy1 = xy(-40 / sc, H)
+        hx0, hy0 = xy(-58 / sc, 0)
+        hx1, hy1 = xy(-58 / sc, H)
         self.create_line(hx0, hy0, hx1, hy1, fill=self._c(self.C_DIM), arrow='both', width=1)
-        self.create_text(hx0 - 14, (hy0 + hy1) / 2, text=f'H={H:.0f}',
+        self.create_text(hx0 - step_dim, (hy0 + hy1) / 2, text=f'H={H:.0f}',
                          fill=self._c(self.C_TXT), font=self.F_DIM, angle=90)
         # B (bottom)
-        bx0, by0 = xy(0, H + 12 / sc)
-        bx1, by1 = xy(B, H + 12 / sc)
+        bx0, by0 = xy(0, H + 36 / sc)
+        bx1, by1 = xy(B, H + 36 / sc)
         self.create_line(bx0, by0, bx1, by1, fill=self._c(self.C_DIM), arrow='both', width=1)
-        self.create_text((bx0 + bx1) / 2, by0 + 12, text=f'B={B:.0f}',
+        self.create_text((bx0 + bx1) / 2, by0 + step_dim, text=f'B={B:.0f}',
                          fill=self._c(self.C_TXT), font=self.F_DIM)
         # clb
         clb_x, clb_y = xy(clb, 6 / sc)
@@ -552,17 +634,38 @@ class SectionCanvas(tk.Canvas):
         self.create_text(clb_x + 4, clb_y, text=f'clb={clb:.0f}', anchor='w',
                          fill=self._c(self.C_TXT), font=self.F_DIM_SM)
 
-        # ncx / ncy label
+        # transverse steel read-out: what was declared, and what the bar
+        # layout lets the legs hold, when the two differ
+        def leg_text(label, declared, placed):
+            declared = max(int(declared), 2)
+            return (f'{label}={declared}' if placed >= declared
+                    else f'{label}={declared} ({placed} on bars)')
+
+        info = (f"{leg_text('ncx', ncx, layout['ncx_placed'])}  "
+                f"{leg_text('ncy', ncy, layout['ncy_placed'])}\ns={s_v:.0f}")
+        short = (layout['ncx_placed'] < max(int(ncx), 2)
+                 or layout['ncy_placed'] < max(int(ncy), 2))
         info_x, info_y = xy(B / 2, H / 2)
-        self.create_text(info_x, info_y, text=f'ncx={ncx}  ncy={ncy}\ns={s_v:.0f}',
-                         fill=self._c(self.C_TXT), font=self.F_INFO, justify='center')
+        self.create_text(info_x, info_y, text=info, justify='center',
+                         fill=self._c(self.C_WI_CONF) if short else self._c(self.C_TXT),
+                         font=self.F_INFO)
 
 
 # ==========================================================================
 # MLR Table Editor  (rectangular only)
 # ==========================================================================
 class MLREditor(ctk.CTkFrame):
-    """Editable table for the reinforcement layer matrix."""
+    """Editable table for the reinforcement layer matrix.
+
+    One row per layer: depth from the top face, how many bars, their diameter,
+    and optionally where they sit across the width. The x column is what makes
+    a non-uniform layout possible - bars of one diameter on the corners and
+    another between them, or a bar placed to receive a crosstie - and it is
+    free to stay empty, in which case the bars are spread evenly between the
+    cover lines exactly as before.
+    """
+
+    COLUMNS = [('mlr_depth', 80), ('mlr_nbars', 70), ('mlr_diam', 80), ('mlr_x', 170)]
 
     def __init__(self, parent, on_change=None, **kw):
         super().__init__(parent, **kw)
@@ -572,8 +675,9 @@ class MLREditor(ctk.CTkFrame):
         # Header
         hdr = ctk.CTkFrame(self, fg_color='transparent')
         hdr.pack(fill='x', padx=2, pady=(4, 0))
-        for i, (key, w) in enumerate([('mlr_depth', 80), ('mlr_nbars', 70), ('mlr_diam', 80)]):
-            ctk.CTkLabel(hdr, text=T(key), width=w, font=('Segoe UI', 11, 'bold')).grid(row=0, column=i, padx=2)
+        for i, (key, w) in enumerate(self.COLUMNS):
+            ctk.CTkLabel(hdr, text=T(key), width=w,
+                         font=('Segoe UI', 11, 'bold')).grid(row=0, column=i, padx=2)
 
         self._table_frame = ctk.CTkFrame(self, fg_color='transparent')
         self._table_frame.pack(fill='x', padx=2)
@@ -593,21 +697,24 @@ class MLREditor(ctk.CTkFrame):
         for d, n, dia in defaults:
             self._add_row(d, n, dia)
 
-    def _add_row(self, depth=0.0, n_bars=2, diam=25.4):
+    def _add_row(self, depth=0.0, n_bars=2, diam=25.4, xs=None):
         row_frame = ctk.CTkFrame(self._table_frame, fg_color='transparent')
-        idx = len(self._rows)
         row_frame.pack(fill='x', pady=1)
 
         v_depth = tk.StringVar(value=f'{depth}')
         v_nbars = tk.StringVar(value=f'{int(n_bars)}')
-        v_diam  = tk.StringVar(value=f'{diam}')
+        v_diam = tk.StringVar(value=f'{diam}')
+        v_x = tk.StringVar(value=format_bar_x(xs))
 
-        for v, w in [(v_depth, 80), (v_nbars, 70), (v_diam, 80)]:
+        for v, (_, w) in zip((v_depth, v_nbars, v_diam, v_x), self.COLUMNS):
             e = ctk.CTkEntry(row_frame, textvariable=v, width=w, height=26)
+            if v is v_x:
+                e.configure(placeholder_text=T('mlr_x_hint'))
+                Tip(e, get_tips().get('mlr_x', ''))
             e.pack(side='left', padx=2)
             v.trace_add('write', lambda *_: self._fire_change())
 
-        self._rows.append((row_frame, v_depth, v_nbars, v_diam))
+        self._rows.append((row_frame, v_depth, v_nbars, v_diam, v_x))
         self._fire_change()
 
     def _remove_row(self):
@@ -622,19 +729,40 @@ class MLREditor(ctk.CTkFrame):
 
     def get_mlr(self):
         result = []
-        for _, vd, vn, vdia in self._rows:
+        for _, vd, vn, vdia, _vx in self._rows:
             try:
                 result.append([float(vd.get()), int(float(vn.get())), float(vdia.get())])
             except ValueError:
                 pass
         return result
 
-    def set_mlr(self, mlr_list):
+    def get_bar_x(self):
+        """The explicit bar positions, row by row, or None when none is set.
+
+        Parallel to get_mlr: a row whose depth, count or diameter cannot be
+        read is dropped from both, so the two never fall out of step. A row
+        without positions, or with a count that does not match what is typed,
+        contributes None and is spaced uniformly.
+        """
+        positions = []
+        for _, vd, vn, vdia, vx in self._rows:
+            try:
+                n_bars = int(float(vn.get()))
+                float(vd.get())
+                float(vdia.get())
+            except ValueError:
+                continue
+            values = parse_bar_x(vx.get())
+            positions.append(values if values and len(values) == n_bars else None)
+        return positions if any(p for p in positions) else None
+
+    def set_mlr(self, mlr_list, bar_x=None):
         for frame, *_ in self._rows:
             frame.destroy()
         self._rows.clear()
-        for row in mlr_list:
-            self._add_row(row[0], row[1], row[2])
+        for i, row in enumerate(mlr_list):
+            xs = bar_x[i] if bar_x is not None and i < len(bar_x) else None
+            self._add_row(row[0], row[1], row[2], xs)
 
 
 # ==========================================================================
@@ -643,7 +771,7 @@ class MLREditor(ctk.CTkFrame):
 class CumbiaApp(ctk.CTk):
     def __init__(self):
         super().__init__()
-        self.title('CUMBIA_PY 0.3.4')
+        self.title('CUMBIA_PY 0.3.5')
         self.geometry('1200x820')
         self.minsize(900, 600)
 
@@ -653,6 +781,11 @@ class CumbiaApp(ctk.CTk):
         self._vars_cir = {}
         self._vars_rect = {}
         self._running = False
+        # the preview refreshes while the tab is still being built, so the
+        # consistency panel has to exist as "not there yet" from the start
+        self._checks_panel = None
+        self._check_rows = []
+        self._findings = []
 
         self._build_ui()
 
@@ -661,7 +794,7 @@ class CumbiaApp(ctk.CTk):
         # Title bar
         title_bar = ctk.CTkFrame(self, height=44, corner_radius=0)
         title_bar.pack(fill='x', padx=0, pady=0)
-        ctk.CTkLabel(title_bar, text='  CUMBIA_PY 0.3.4', font=('Segoe UI', 16, 'bold')).pack(side='left', padx=10)
+        ctk.CTkLabel(title_bar, text='  CUMBIA_PY 0.3.5', font=('Segoe UI', 16, 'bold')).pack(side='left', padx=10)
         ctk.CTkLabel(title_bar, text=T('app_subtitle'),
                      font=('Segoe UI', 11)).pack(side='left', padx=6)
 
@@ -719,6 +852,9 @@ class CumbiaApp(ctk.CTk):
             text=T('theme_dark') if mode == 'dark' else T('theme_light'))
         self._cir_canvas.request_redraw()
         self._rect_canvas.request_redraw()
+        # the finding colours are set per label, so they follow the theme only
+        # if the panel is rebuilt
+        self._refresh_rect_canvas()
 
     # ---- language toggle -----------------------------------------------------
     def _toggle_lang(self):
@@ -904,8 +1040,16 @@ class CumbiaApp(ctk.CTk):
         self._v_wi.trace_add('write', lambda *_: self._refresh_rect_canvas())
 
         self._wi_display = ctk.CTkLabel(sw_frame, text=f'{T("wi_label")} = []', anchor='w',
-                                        font=('Consolas', 9))
+                                        justify='left', wraplength=380,
+                                        font=('Consolas', 13))
         self._wi_display.pack(anchor='w', padx=6, pady=2)
+
+        # consistency checks, under both columns
+        editor.rowconfigure(1, weight=1)
+        self._checks_panel = ctk.CTkScrollableFrame(
+            editor, label_text=T('consistency_checks'), height=130)
+        self._checks_panel.grid(row=1, column=0, columnspan=2,
+                                sticky='nsew', padx=4, pady=(2, 4))
 
         self._refresh_rect_canvas()
 
@@ -964,45 +1108,10 @@ class CumbiaApp(ctk.CTk):
         return layers
 
     # ---- compute wi from MLR (auto) ----------------------------------------
-    def _compute_wi(self, mlr):
-        """Wi between ALL bars (for display arrows showing bar positions)."""
-        try:
-            B = float(self._rect_value('B', '300'))
-            clb = float(self._rect_value('clb', '40'))
-        except (ValueError, AttributeError):
-            return []
-
-        if len(mlr) == 0:
-            return []
-
-        wi = []
-
-        top_n = int(mlr[0][1])
-        top_d = mlr[0][2]
-        if top_n > 1:
-            gap = (B - 2 * clb - top_n * top_d) / (top_n - 1)
-            wi.extend([gap] * (top_n - 1))
-
-        for j in range(len(mlr) - 1):
-            gap = mlr[j + 1][0] - mlr[j][0] - (mlr[j][2] + mlr[j + 1][2]) / 2
-            wi.append(gap)
-
-        bot_n = int(mlr[-1][1])
-        bot_d = mlr[-1][2]
-        if bot_n > 1:
-            gap = (B - 2 * clb - bot_n * bot_d) / (bot_n - 1)
-            wi.extend([gap] * (bot_n - 1))
-
-        for j in range(len(mlr) - 1):
-            gap = mlr[j + 1][0] - mlr[j][0] - (mlr[j][2] + mlr[j + 1][2]) / 2
-            wi.append(gap)
-
-        return wi
-
-    def _compute_wi_mander(self, mlr):
+    def _compute_wi_mander(self, mlr, bar_x=None):
         """Wi between RESTRAINED bars only (for Mander confinement model).
 
-        Delegates to material_models.wi_mander, the same function
+        Delegates to section_geometry.wi_mander, the same function
         CUMBIA_RECT.py uses, so the GUI and the engine cannot disagree.
         Returns plain floats: the result is written to the parameter JSON.
         """
@@ -1018,7 +1127,45 @@ class CumbiaApp(ctk.CTk):
         if len(mlr) == 0:
             return []
 
-        return [float(v) for v in mm.wi_mander(mlr, B, H, clb, ncx, ncy)]
+        return [float(v) for v in sg.wi_mander(mlr, B, H, clb, ncx, ncy, bar_x)]
+
+    # ---- the rectangular section as it is currently typed in ---------------
+    def _current_rect_section(self):
+        """Every input of the rectangular tab, plus the restraint layout.
+
+        Read in one place so that the preview, the wi read-out, the
+        consistency checks and the parameter file all describe the same
+        section instead of each re-reading the widgets its own way.
+        """
+        def number(raw, default):
+            try:
+                return float(raw)
+            except (TypeError, ValueError):
+                return default
+
+        sec = {
+            'B': number(self._rect_value('B', '300'), 300.0),
+            'H': number(self._rect_value('H', '400'), 400.0),
+            'clb': number(self._rect_value('clb', '40'), 40.0),
+            'dv': number(self._v_dv.get(), 9.5),
+            's': number(self._v_s.get(), 120.0),
+            'ncx': int(number(self._v_ncx.get(), 2)),
+            'ncy': int(number(self._v_ncy.get(), 2)),
+            'auto_layout': bool(self._auto_var.get()),
+            'wi_auto': bool(self._wi_auto.get()),
+        }
+        if sec['auto_layout']:
+            sec['mlr'], sec['bar_x'] = self._compute_auto_mlr(), None
+        else:
+            sec['mlr'], sec['bar_x'] = sorted_layers(self._mlr_editor.get_mlr(),
+                                                     self._mlr_editor.get_bar_x())
+        sec['layout'] = sg.restrained_layout(sec['mlr'], sec['B'], sec['H'], sec['clb'],
+                                             sec['ncx'], sec['ncy'], sec['bar_x'])
+        if sec['wi_auto']:
+            sec['wi'] = [float(v) for v in sec['layout']['wi']]
+        else:
+            sec['wi'] = parse_bar_x(self._v_wi.get())
+        return sec
 
     # ---- refresh canvases -------------------------------------------------
     def _refresh_cir_canvas(self, *_):
@@ -1035,50 +1182,66 @@ class CumbiaApp(ctk.CTk):
 
     def _refresh_rect_canvas(self, *_):
         try:
+            sec = self._current_rect_section()
             p = {'_type': 'rectangular'}
             for key, var in self._vars_rect.items():
                 try:
                     p[key] = float(var.get())
                 except ValueError:
                     p[key] = var.get()
+            for key in ('B', 'H', 'clb', 'dv', 's', 'ncx', 'ncy'):
+                p[key] = sec[key]
+            p['_mlr'] = sec['mlr']
+            p['_bar_x'] = sec['bar_x']
+            p['_layout'] = sec['layout']
+            p['_wi_mander'] = sec['wi']
 
-            # stirrup params
-            try: p['dv'] = float(self._v_dv.get())
-            except ValueError: pass
-            try: p['s'] = float(self._v_s.get())
-            except ValueError: pass
-            try: p['ncx'] = int(float(self._v_ncx.get()))
-            except ValueError: pass
-            try: p['ncy'] = int(float(self._v_ncy.get()))
-            except ValueError: pass
+            label = 'wi_mander_label' if sec['wi_auto'] else 'wi_manual_label'
+            self._wi_display.configure(
+                text=f'{T(label)} = [{", ".join(f"{v:.0f}" for v in sec["wi"])}]')
 
-            # MLR
-            if self._auto_var.get():
-                mlr = self._compute_auto_mlr()
-            else:
-                mlr = self._mlr_editor.get_mlr()
-            p['_mlr'] = mlr
-
-            # wi
-            if self._wi_auto.get():
-                wi_display = self._compute_wi(mlr)
-                wi_mander = self._compute_wi_mander(mlr)
-                self._wi_display.configure(
-                    text=f'{T("wi_mander_label")} = [{", ".join(f"{v:.0f}" for v in wi_mander)}]')
-            else:
-                try:
-                    wi_mander = [float(x.strip()) for x in self._v_wi.get().split(',') if x.strip()]
-                except ValueError:
-                    wi_mander = []
-                wi_display = wi_mander
-                self._wi_display.configure(
-                    text=f'{T("wi_manual_label")} = [{", ".join(f"{v:.0f}" for v in wi_mander)}]')
-            p['_wi'] = wi_display
-            p['_wi_mander'] = wi_mander
-
+            # the preview first: a problem in the checks must not leave the
+            # section undrawn
             self._rect_canvas.update_params(p)
+            self._refresh_checks(sec)
         except Exception:
             pass
+
+    # ---- consistency checks -------------------------------------------------
+    def _refresh_checks(self, sec):
+        """Re-run the checks on the section as typed and list what they say."""
+        self._findings = sc.check_rectangular(
+            sec['B'], sec['H'], sec['clb'], sec['dv'], sec['s'],
+            sec['ncx'], sec['ncy'], sec['mlr'], bar_x=sec['bar_x'],
+            wi=sec['wi'], wi_auto=sec['wi_auto'])
+
+        panel = getattr(self, '_checks_panel', None)
+        if panel is None:
+            return
+        for row in self._check_rows:
+            row.destroy()
+        self._check_rows = []
+
+        if not self._findings:
+            row = ctk.CTkLabel(panel, text=T('checks_ok'), anchor='w',
+                               justify='left', wraplength=560)
+            row.pack(fill='x', padx=6, pady=2)
+            self._check_rows.append(row)
+            return
+
+        dark = ctk.get_appearance_mode() == 'Dark'
+        for finding in self._findings:
+            colour = SEVERITY_COLOURS[finding.severity][0 if dark else 1]
+            row = ctk.CTkLabel(
+                panel, anchor='w', justify='left', wraplength=560,
+                text=f'{T(SEVERITY_LABELS[finding.severity])}  {finding_text(finding)}',
+                text_color=colour)
+            row.pack(fill='x', padx=6, pady=2)
+            self._check_rows.append(row)
+
+    def _blocking_findings(self):
+        """The findings that must be cleared before an analysis can run."""
+        return [f for f in getattr(self, '_findings', []) if f.severity == sc.ERROR]
 
     # ---- build generic parameter form -------------------------------------
     def _build_param_form(self, parent, schema, var_dict):
@@ -1179,11 +1342,19 @@ class CumbiaApp(ctk.CTk):
                     'Dbl_auto', self._v_Dbl_auto.get().strip())
             else:
                 params['auto_generate_MLR'] = False
-                params['custom_MLR'] = self._mlr_editor.get_mlr()
+                mlr, bar_x = sorted_layers(self._mlr_editor.get_mlr(),
+                                           self._mlr_editor.get_bar_x())
+                params['custom_MLR'] = mlr
+                if bar_x is not None:
+                    params['custom_bar_x'] = bar_x
 
             if self._wi_auto.get():
-                mlr = self._compute_auto_mlr() if is_auto else self._mlr_editor.get_mlr()
-                params['wi_input'] = self._compute_wi_mander(mlr)
+                if is_auto:
+                    mlr, bar_x = self._compute_auto_mlr(), None
+                else:
+                    mlr, bar_x = sorted_layers(self._mlr_editor.get_mlr(),
+                                               self._mlr_editor.get_bar_x())
+                params['wi_input'] = self._compute_wi_mander(mlr, bar_x)
             else:
                 params['wi_input'] = [
                     as_number('wi_input', x.strip())
@@ -1195,7 +1366,7 @@ class CumbiaApp(ctk.CTk):
     def _save_input_file(self, output_dir, section_type, params, run_name):
         save_data = {
             '_section_type': section_type,
-            '_app_version': '0.3.4',
+            '_app_version': '0.3.5',
         }
         save_data.update(params)
         path = os.path.join(output_dir, f'{run_name}_input.json')
@@ -1263,7 +1434,8 @@ class CumbiaApp(ctk.CTk):
                 self._auto_var.deselect()
                 self._toggle_auto_mlr()
             if 'custom_MLR' in data:
-                self._mlr_editor.set_mlr(data['custom_MLR'])
+                self._mlr_editor.set_mlr(data['custom_MLR'],
+                                         data.get('custom_bar_x'))
 
         wi_input = data.get('wi_input', [0])
         if wi_input == [0] or wi_input == 0:
@@ -1291,6 +1463,15 @@ class CumbiaApp(ctk.CTk):
         except Exception as e:
             messagebox.showerror(T('param_error'), f'{T("msg_param_error")}{e}')
             return
+
+        if section_type == 'rectangular':
+            blocking = self._blocking_findings()
+            if blocking:
+                messagebox.showerror(
+                    T('consistency_checks'),
+                    T('msg_blocking_errors') + '\n\n'
+                    + '\n\n'.join(f'- {finding_text(f)}' for f in blocking))
+                return
 
         # "Save as" dialog: ask subfolder name
         dialog = ctk.CTkInputDialog(

@@ -4,6 +4,8 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import material_models as mm  
+import section_geometry as sg
+import section_checks as sc
 import plot_utils as pu
 from matplotlib.backends.backend_pdf import PdfPages
 plt.close('all')
@@ -64,6 +66,15 @@ custom_MLR = np.array([
     [200.0, 2, 19.0],
     [349.0, 3, 22.2]
 ])
+
+# Optional: explicit bar positions across the width, one list per MLR row, in
+# the same order as the rows above. A row left as None keeps the uniform
+# spacing between the cover lines. Bar positions do not enter the moment
+# curvature analysis, which reads the layer depth, count and diameter only;
+# they decide where a crosstie can hook, and so the clear distances wi that
+# Mander's confinement effectiveness factor is built from.
+#   custom_bar_x = [[52.7, 175.0, 297.3], None, None, [51.1, 175.0, 298.9]]
+custom_bar_x = None
 
 
 dv = 9.5                    # Diameter of transverse reinforcement [mm]
@@ -133,8 +144,13 @@ _pf = __import__('os').environ.get('CUMBIA_PARAMS', '')
 if _pf and __import__('os').path.exists(_pf):
     with open(_pf) as _f:
         _p = _json.load(_f)
+    # custom_bar_x is a ragged list - one entry per MLR row, null where the
+    # bars are evenly spaced - so it is the one nested list that must stay a
+    # plain Python list instead of becoming a numpy matrix.
+    _KEEP_AS_LIST = {'custom_bar_x'}
     for _k, _v in _p.items():
-        if isinstance(_v, list) and len(_v) > 0 and isinstance(_v[0], list):
+        if (_k not in _KEEP_AS_LIST and isinstance(_v, list)
+                and len(_v) > 0 and isinstance(_v[0], list)):
             globals()[_k] = np.array(_v)
         else:
             globals()[_k] = _v
@@ -264,11 +280,17 @@ if auto_generate_MLR:
             
     layers.append([bot_depth, n_top_bot, Dbl_auto])
     MLR = np.array(layers)
+    MLR_X = None
 else:
     MLR = custom_MLR
+    MLR_X = custom_bar_x
 
 # Parse the MLR Matrix Layer by Layer
-MLR = MLR[MLR[:, 0].argsort()]  # Ensure sorted by depth
+_order = MLR[:, 0].argsort()
+MLR = MLR[_order]  # Ensure sorted by depth
+if MLR_X is not None:
+    # keep the explicit bar positions attached to the row they belong to
+    MLR_X = [MLR_X[i] if i < len(MLR_X) else None for i in _order]
 d_layer = MLR[:, 0]
 n_bars = MLR[:, 1]
 dbl_layer = MLR[:, 2]
@@ -295,12 +317,27 @@ AxialRatio = P / (fpc * Agross)
 # ------------------------------------------------------------------------------
 wi_input_arr = np.array(wi_input)
 
-if np.sum(wi_input_arr) == 0:
-    # Automatic mode: clear distances between RESTRAINED bars only.
-    # Shared with the GUI (main.py) so the two cannot drift apart.
-    wi = mm.wi_mander(MLR, B, H, clb, ncx, ncy)
+# The restraint layout is built either way: in automatic mode it produces wi,
+# and in manual mode the consistency checks compare what was entered against
+# the section that was described. Shared with the GUI (main.py) so the two
+# cannot drift apart.
+bar_layout = sg.restrained_layout(MLR, B, H, clb, ncx, ncy, MLR_X)
+wi_auto = np.sum(wi_input_arr) == 0
+if wi_auto:
+    # clear distances between RESTRAINED bars only, read off the real bar
+    # layout - a leg restrains a bar only where there is one to hook
+    wi = bar_layout['wi']
 else:
     wi = wi_input_arr
+
+section_findings = sc.check_rectangular(B, H, clb, dv, s, ncx, ncy, MLR,
+                                        bar_x=MLR_X, wi=list(wi),
+                                        wi_auto=wi_auto)
+# The full list goes into the report; an error is shown at once, because in
+# script mode nobody reads the PDF before the analysis has already run.
+for _finding in section_findings:
+    if _finding.severity == sc.ERROR:
+        print(f"[section check] ERROR: {_finding.message}")
 
 # ------------------------------------------------------------------------------
 # MATERIAL MODELS & PLOTS 1 & 2
@@ -1301,6 +1338,16 @@ add_line(f"{ductilitymode.capitalize()} Bending")
 add_line(f"Longitudinal Steel Ratio:  {LongSteelRatio:.3f}")
 add_line(f"Average Transverse Steel Ratio:  {TransvSteelRatioAverage:.3f}")
 add_line(f"Axial Load Ratio:  {AxialRatio:.3f}")
+add_line("")
+add_line("Clear distances between restrained bars (wi) "
+         + ("[automatic]:" if wi_auto else "[entered]:"))
+add_line("  " + ", ".join(f"{v:.1f}" for v in wi) + "  mm")
+add_line(f"Transverse legs holding a longitudinal bar:  "
+         f"ncx = {bar_layout['ncx_placed']} of {max(int(ncx), 2)}, "
+         f"ncy = {bar_layout['ncy_placed']} of {max(int(ncy), 2)}")
+add_line("")
+for _line in sc.report_lines(section_findings):
+    add_line(_line)
 
 if p_delta.lower() == 'y':
     add_line("")

@@ -67,7 +67,7 @@ jobs:
           test -f "$root/CUMBIA_PY.exe" || { echo "::error::CUMBIA_PY.exe missing"; exit 1; }
 
           # data files the .spec declares must actually be present
-          for f in CUMBIA_RECT.py CUMBIA_CIR.py material_models.py plot_utils.py i18n.py logo.png LICENSE; do
+          for f in CUMBIA_RECT.py CUMBIA_CIR.py material_models.py section_geometry.py section_checks.py plot_utils.py i18n.py logo.png LICENSE; do
             find "$root" -name "$f" -print -quit | grep -q . \
               || { echo "::error::missing bundled data file: $f"; exit 1; }
           done

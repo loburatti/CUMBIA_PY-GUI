@@ -28,10 +28,32 @@ def _string_tables():
 
 
 def test_english_and_italian_define_the_same_keys():
+    """Every interface string exists in both languages.
+
+    The check_* keys are the one exception: section_checks.py owns the English
+    wording, so that the report and the panel print the same sentence, and
+    i18n carries only the translation. test_no_check_key_is_an_orphan covers
+    that side.
+    """
     strings = _string_tables()['_STRINGS']
-    en, it = set(strings['en']), set(strings['it'])
+    en = {k for k in strings['en'] if not k.startswith('check_')}
+    it = {k for k in strings['it'] if not k.startswith('check_')}
     assert en - it == set(), f'missing Italian translations: {sorted(en - it)}'
     assert it - en == set(), f'missing English translations: {sorted(it - en)}'
+
+
+def test_no_check_key_is_an_orphan():
+    """An Italian check_* string with no finding behind it is dead weight,
+    and an English template with no translation shows up untranslated."""
+    import section_checks as sc
+
+    strings = _string_tables()['_STRINGS']
+    translated = {k[len('check_'):] for k in strings['it'] if k.startswith('check_')}
+    assert translated == set(sc.TEMPLATES), (
+        f'only in i18n: {sorted(translated - set(sc.TEMPLATES))}; '
+        f'only in section_checks: {sorted(set(sc.TEMPLATES) - translated)}')
+    assert not [k for k in strings['en'] if k.startswith('check_')], (
+        'the English wording belongs in section_checks.py, not in i18n')
 
 
 def test_tooltips_cover_both_languages():
@@ -279,13 +301,12 @@ def test_gui_logic_never_constructs_a_tk_variable(gui, monkeypatch):
 
     assert gui.CumbiaApp._rect_value(app, 'B', '300') == '300.0'
     assert gui.CumbiaApp._compute_auto_mlr(app)
-    assert gui.CumbiaApp._compute_wi(app, mlr)
     assert gui.CumbiaApp._compute_wi_mander(app, mlr)
     assert gui.CumbiaApp._collect_params(app, 'rectangular')['wi_input']
 
 
 # ------------------------------------------------------------- versioning ----
-VERSION = '0.3.4'
+VERSION = '0.3.5'
 
 
 def test_every_version_string_agrees():
@@ -345,8 +366,186 @@ def test_preview_font_helper_applies_the_scaling_factor(gui, monkeypatch):
 
 
 def test_tooltip_text_is_large_enough(gui):
+    """The hover help is read at a glance, so it may not be smaller than the
+    interface around it."""
+    assert gui.Tip.SIZE >= 14, f'tooltip is {gui.Tip.SIZE} pt - too small'
+
+
+def test_tooltip_font_follows_the_interface_scaling(gui, monkeypatch):
+    """A tooltip is a bare tk.Toplevel, outside CustomTkinter's scaling."""
+    class _Tracker:
+        @staticmethod
+        def get_widget_scaling(_widget):
+            return 1.5
+
+    monkeypatch.setattr(gui.ctk, 'ScalingTracker', _Tracker, raising=False)
+    assert gui.scaled_font_size(None, 10) == 15
+
+
+def test_preview_labels_are_large_enough(gui):
+    """Every callout drawn on the preview canvas, at its declared size."""
+    canvas = gui.SectionCanvas
+    for name in ('S_DIM', 'S_DIM_SM', 'S_INFO', 'S_WI', 'S_WI_CONF'):
+        assert getattr(canvas, name) >= 14, f'{name} is too small to read'
+
+
+def test_preview_labels_grow_with_a_taller_pane(gui):
+    """A preview shown in a tall pane scales its labels with the drawing."""
+    canvas = gui.SectionCanvas
+    inst = canvas.__new__(canvas)
+    inst.winfo_height = lambda: canvas.CANVAS_REF_H * 3
+    _, big = canvas._font(inst, 10)
+    inst.winfo_height = lambda: canvas.CANVAS_REF_H
+    _, ref = canvas._font(inst, 10)
+    inst.winfo_height = lambda: canvas.CANVAS_REF_H // 4
+    _, small = canvas._font(inst, 10)
+    assert big > ref, 'a taller pane must grow the labels'
+    assert big <= round(10 * canvas.CANVAS_ZOOM_MAX), 'the zoom must stay bounded'
+    assert small == ref, 'a short pane must never shrink them'
+
+
+def test_every_local_module_is_bundled_by_the_spec():
+    """PyInstaller ships the engines as data files, so a module they import
+    has to be listed too or the packaged build fails at run time with an
+    ImportError the source tree never shows."""
     import re
-    src = open(os.path.join(REPO_ROOT, 'main.py'), encoding='utf-8').read()
-    tip = re.search(r"class Tip:.*?font=\('Segoe UI', (\d+)\)", src, re.S)
-    assert tip, 'tooltip font not found'
-    assert int(tip.group(1)) >= 12, f'tooltip is {tip.group(1)} pt — too small'
+
+    spec = open(os.path.join(REPO_ROOT, 'CUMBIA_PY.spec'), encoding='utf-8').read()
+    local = set()
+    for name in ('main.py', 'CUMBIA_RECT.py', 'CUMBIA_CIR.py'):
+        src = open(os.path.join(REPO_ROOT, name), encoding='utf-8').read()
+        for module in re.findall(r'^\s*import (\w+)', src, re.M):
+            if os.path.isfile(os.path.join(REPO_ROOT, f'{module}.py')):
+                local.add(f'{module}.py')
+
+    missing = sorted(m for m in local if m not in spec and m != 'main.py')
+    assert not missing, f'not bundled by CUMBIA_PY.spec: {missing}'
+
+
+# ------------------------------------------------------------ the preview ----
+def _drawn(gui, params):
+    """Run the rectangular preview against a recording canvas.
+
+    _refresh_rect_canvas swallows every exception so a typo in the drawing
+    code shows up as an empty preview rather than a traceback. The drawing
+    routine is therefore called directly here, and what it emits is recorded.
+    """
+    canvas = gui.SectionCanvas.__new__(gui.SectionCanvas)
+    canvas._dark = True
+    canvas._params = params
+    calls = {'line': [], 'text': [], 'oval': [], 'rect': []}
+    canvas.delete = lambda *a, **k: None
+    canvas.create_line = lambda *a, **k: calls['line'].append((a, k))
+    canvas.create_text = lambda *a, **k: calls['text'].append((a, k))
+    canvas.create_oval = lambda *a, **k: calls['oval'].append((a, k))
+    canvas.create_rectangle = lambda *a, **k: calls['rect'].append((a, k))
+    gui.SectionCanvas._draw_rectangular(canvas)
+    return calls
+
+
+def _rect_params(gui, mlr, ncx, ncy, bar_x=None, B=350.0, H=350.0, clb=40.0):
+    import section_geometry as sg
+    return {'_type': 'rectangular', 'B': B, 'H': H, 'clb': clb, 'dv': 8.0,
+            's': 200.0, 'ncx': ncx, 'ncy': ncy, '_mlr': mlr, '_bar_x': bar_x,
+            '_layout': sg.restrained_layout(mlr, B, H, clb, ncx, ncy, bar_x)}
+
+
+def test_preview_draws_every_bar_that_was_typed(gui):
+    mlr = [[48.0, 2, 16.0], [175.0, 2, 16.0], [302.0, 3, 16.0]]
+    calls = _drawn(gui, _rect_params(gui, mlr, 4, 3))
+    # one oval per bar, plus one ring per bar the transverse steel holds
+    assert len(calls['oval']) >= sum(int(row[1]) for row in mlr)
+    assert calls['text'], 'the preview produced no labels'
+
+
+def test_preview_puts_a_leg_on_a_bar_or_not_at_all(gui):
+    """The leg a crosstie cannot hook must not be drawn as if it existed."""
+    mlr = [[48.0, 2, 16.0], [302.0, 3, 16.0]]
+    short = _drawn(gui, _rect_params(gui, mlr, 2, 3))
+    dashed = [c for c in short['line'] if c[1].get('dash') == (4, 3)]
+    assert dashed == [], 'a leg with no bar to hook was drawn'
+
+    with_bar = [[48.0, 3, 16.0], [302.0, 3, 16.0]]
+    full = _drawn(gui, _rect_params(gui, with_bar, 2, 3))
+    assert [c for c in full['line'] if c[1].get('dash') == (4, 3)], (
+        'the leg the layout can host was not drawn')
+
+
+def test_preview_flags_legs_the_layout_cannot_host(gui):
+    """The ncx/ncy read-out says what was declared and what is on bars."""
+    mlr = [[48.0, 2, 16.0], [302.0, 3, 16.0]]
+    texts = [k.get('text', '') for _, k in _drawn(gui, _rect_params(gui, mlr, 2, 3))['text']]
+    info = [t for t in texts if 'ncy' in t]
+    assert info and 'on bars' in info[0], info
+
+
+def test_preview_labels_the_gaps_it_draws(gui):
+    """Each clear distance drawn must carry its value."""
+    mlr = [[48.0, 2, 16.0], [302.0, 2, 16.0]]
+    calls = _drawn(gui, _rect_params(gui, mlr, 2, 2))
+    texts = [k.get('text', '') for _, k in calls['text']]
+    assert '238' in texts, f'the corner-to-corner gap is missing from {texts}'
+
+
+def test_preview_survives_an_empty_or_broken_layer_table(gui):
+    for mlr in ([], [[48.0, 0, 16.0]], [[48.0, 2, 16.0]]):
+        _drawn(gui, _rect_params(gui, mlr, 3, 3))
+
+
+# ------------------------------------------------------ consistency panel ----
+def test_a_finding_reads_in_the_interface_language(gui):
+    """finding_text prefers the translation and falls back to the English
+    template section_checks owns, without ever raising on a missing key."""
+    import i18n
+    import section_checks as sc
+
+    finding = sc.Finding(sc.WARNING, 'legs_without_bars_ncy', declared=3, placed=2)
+    try:
+        i18n.set_lang('it')
+        italian = gui.finding_text(finding)
+        i18n.set_lang('en')
+        english = gui.finding_text(finding)
+    finally:
+        i18n.set_lang('en')
+
+    assert '3' in italian and '2' in italian
+    assert english == sc.TEMPLATES['legs_without_bars_ncy'].format(declared=3, placed=2)
+    assert italian != english
+
+
+def test_an_untranslated_finding_still_reads(gui, monkeypatch):
+    import section_checks as sc
+
+    monkeypatch.setitem(sc.TEMPLATES, 'made_up_code', 'plain {value:g}')
+    assert gui.finding_text(sc.Finding(sc.ERROR, 'made_up_code', value=7)) == 'plain 7'
+
+
+def test_every_severity_has_a_colour_and_a_label(gui):
+    import section_checks as sc
+
+    for severity in (sc.ERROR, sc.WARNING, sc.ADVICE):
+        assert severity in gui.SEVERITY_COLOURS
+        assert gui.T(gui.SEVERITY_LABELS[severity]) != gui.SEVERITY_LABELS[severity]
+
+
+def test_only_errors_block_a_run(gui):
+    import section_checks as sc
+
+    app = gui.CumbiaApp.__new__(gui.CumbiaApp)
+    app._findings = [sc.Finding(sc.WARNING, 'legs_without_bars_ncy', declared=3, placed=2),
+                     sc.Finding(sc.ADVICE, 'legs_could_be_added_ncx', available=4, declared=2)]
+    assert gui.CumbiaApp._blocking_findings(app) == []
+
+    app._findings.append(sc.Finding(sc.ERROR, 'single_layer'))
+    assert [f.code for f in gui.CumbiaApp._blocking_findings(app)] == ['single_layer']
+
+
+def test_the_checks_run_even_before_the_panel_exists(gui):
+    """_refresh_rect_canvas fires while the tab is still being built."""
+    app = gui.CumbiaApp.__new__(gui.CumbiaApp)
+    app._checks_panel = None
+    sec = {'B': 300.0, 'H': 400.0, 'clb': 40.0, 'dv': 9.5, 's': 120.0,
+           'ncx': 2, 'ncy': 2, 'wi_auto': True, 'bar_x': None,
+           'mlr': [[52.7, 4, 25.4], [347.3, 4, 25.4]], 'wi': None}
+    gui.CumbiaApp._refresh_checks(app, sec)
+    assert isinstance(app._findings, list)

@@ -48,9 +48,16 @@ Version 0.3 introduces a complete GUI built with [CustomTkinter](https://github.
 This version includes bug fixes and enhancements documented in detail in [CHANGES.md](CHANGES.md). Summary:
 
 ### 1. Confinement Model Fix (CUMBIA_RECT.py)
-The automatic `wi` calculation now correctly computes clear distances between **restrained bars only** (tied by stirrup corners or crossties), as required by the Mander confinement model. The original code computed distances between all peripheral bars regardless of restraint.
+The automatic `wi` calculation computes clear distances between **restrained bars only** (tied by stirrup corners or crossties), as required by the Mander confinement model. The original code computed distances between all peripheral bars regardless of restraint.
 
-The calculation lives in a single place, `material_models.wi_mander()`, shared by the GUI, the section preview and the analysis script, so the three can no longer disagree. Script mode now defaults to `wi_input = [0]` (automatic), matching what the GUI computes for the same section.
+Which bars are restrained is read off the bar layout, not off the leg count: a crosstie is a straight bar, so it can only hook where there is a longitudinal bar on both of the faces it spans. A leg with nowhere to go is not placed, and the gap runs past the free bar. Where the declared legs can all be placed — uniformly spaced bars, matching counts on opposite faces — this reproduces the previous calculation exactly; it departs from it only towards less confinement. `ncx` and `ncy` are never rewritten: they state the transverse steel area, which a leg contributes whether or not it hooks a bar.
+
+The calculation lives in a single place, `section_geometry.wi_mander()`, shared by the GUI, the section preview and the analysis script, so the three can no longer disagree. Script mode defaults to `wi_input = [0]` (automatic), matching what the GUI computes for the same section.
+
+The reinforcement table takes an optional **x positions** column (and `custom_bar_x` in script mode) for bars that are not evenly spaced — corner bars of one diameter and intermediate bars of another, or a bar placed to receive a crosstie. Positions do not enter the moment-curvature analysis, which reads layer depth, count and diameter only; they decide where a crosstie can hook, and so the `wi`.
+
+### 1b. Section consistency checks
+The inputs are read as a detailer would read them, live under the section editor and in the report. Errors — bars outside the cover, overlapping bars, `s <= dv`, a single reinforcement layer, an effectiveness factor that comes out at or below zero — block the run and say why. Warnings cover a section that can be built but is not what the numbers describe, above all legs the bar layout cannot hold. Advice points at crossties the layout would allow. Nothing is corrected automatically.
 
 ### 2. Buckling Models Fix
 All four models were verified against the original MATLAB release and the *CUMBIA Theory and User Guide*. Moyer-Kowalsky and Berry-Eberhard are faithful ports; the defects were in the two Goodnight models, which exist only in the Python port.
@@ -122,6 +129,8 @@ minutes. To run one layer only:
 
 ```bash
 python -m pytest tests/test_material_models.py   # fast unit tests
+python -m pytest tests/test_section_geometry.py  # bar layout and restraint
+python -m pytest tests/test_section_checks.py    # consistency checks
 python -m pytest tests/test_wi_consistency.py    # GUI vs script wi agreement
 python -m pytest tests/test_regression_golden.py # numerical regression
 ```
